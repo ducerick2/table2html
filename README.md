@@ -12,6 +12,8 @@ A web application for annotating and correcting OCR errors in table structures e
 
 ## Running the Application with Docker (Recommended)
 
+Note: You must have **docker** and **docker-compose** installed on your machine
+
 ### Linux/macOS Users
 
 1. **Using Pre-built Docker Images** (Recommended):
