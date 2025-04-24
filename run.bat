@@ -24,7 +24,7 @@ if "%~1"=="--detach" (
     goto :parse_args
 )
 if "%~1"=="--help" (
-    echo [1mTable Annotation Tool - Usage[0m
+    echo Table Annotation Tool - Usage
     echo.
     echo Options:
     echo   --no-build       Skip rebuilding Docker images, use existing ones
@@ -34,26 +34,26 @@ if "%~1"=="--help" (
     exit /b 0
 )
 
-echo [91mUnknown option: %~1[0m
-echo Use [1mrun.bat --help[0m for available options
+echo Unknown option: %~1
+echo Use run.bat --help for available options
 exit /b 1
 
 :done_args
 
-echo [92m[1mStarting Table Annotation Tool...[0m
+echo Starting Table Annotation Tool...
 echo.
 
 REM Prompt for images directory
-set /p IMAGES_DIR=[94mEnter the full path to your images directory: [0m
+set /p IMAGES_DIR=Enter the full path to your images directory: 
 
 REM Validate directory exists
 if not exist "%IMAGES_DIR%" (
-    echo [93mWarning: Directory '%IMAGES_DIR%' doesn't exist. Creating it now...[0m
+    echo Warning: Directory '%IMAGES_DIR%' doesn't exist. Creating it now...
     mkdir "%IMAGES_DIR%"
 )
 
 REM Set excluded directory
-set /p EXCLUDED_DIR=[94mEnter the full path for excluded images (or press Enter to use default: %IMAGES_DIR%\excluded): [0m
+set /p EXCLUDED_DIR=Enter the full path for excluded images (or press Enter to use default: %IMAGES_DIR%\excluded): 
 
 if "%EXCLUDED_DIR%"=="" (
     set EXCLUDED_DIR=%IMAGES_DIR%\excluded
@@ -65,14 +65,14 @@ set IMAGES_DIR=%IMAGES_DIR%
 set EXCLUDED_DIR=%EXCLUDED_DIR%
 
 echo.
-echo [92mStarting containers with:[0m
-echo   - Images directory: [1m%IMAGES_DIR%[0m
-echo   - Excluded directory: [1m%EXCLUDED_DIR%[0m
+echo Starting containers with:
+echo   - Images directory: %IMAGES_DIR%
+echo   - Excluded directory: %EXCLUDED_DIR%
 if "%REBUILD%"=="false" (
-    echo   - [93mUsing existing Docker images (not rebuilding)[0m
+    echo   - Using existing Docker images (not rebuilding)
 )
 echo.
-echo [93mOnce running, access the application at: [1mhttp://localhost[0m
+echo Once running, access the application at: http://localhost
 echo.
 
 REM Start Docker Compose with appropriate options
