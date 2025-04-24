@@ -149,6 +149,25 @@ export const updateHtml = async (fileId, html) => {
 };
 
 /**
+ * Exclude a file by moving it and its HTML to the excluded directory
+ * @param {string} fileId - The ID of the file
+ * @returns {Promise} - Promise with the API response
+ */
+export const excludeFile = async (fileId) => {
+  try {
+    const response = await apiClient.post(`/files/${fileId}/exclude`);
+    return response.data;
+  } catch (error) {
+    console.error('Error excluding file:', error);
+    // Return a standardized error response
+    return {
+      success: false,
+      error: error.message || 'Unknown error excluding file'
+    };
+  }
+};
+
+/**
  * Download all annotations export
  * This opens a download in the browser
  */
@@ -180,6 +199,7 @@ export default {
   saveAnnotations,
   exportHtml,
   updateHtml,
+  excludeFile,
   downloadAllAnnotations,
   getServerStatus
 }; 

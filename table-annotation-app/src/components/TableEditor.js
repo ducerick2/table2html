@@ -247,7 +247,14 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
   // Handle key press in the edit input
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
-      handleSaveEdit();
+      // If shift key is pressed with Enter, allow normal behavior (line break)
+      if (e.shiftKey) {
+        return; // Let the default behavior occur (new line)
+      } else {
+        // No shift key, so save the edit
+        e.preventDefault();
+        handleSaveEdit();
+      }
     } else if (e.key === 'Escape') {
       handleCancelEdit();
     }
@@ -333,29 +340,37 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
 
   // Render the table editor
   return (
-    <Box className="table-editor">
-      <Box className="annotation-header">
-        <Typography variant="h6">
-          Table Editor
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
-            Click on any cell to edit its contents. Press Enter to save or Escape to cancel.
-            Use left/right arrow keys to navigate between images.
+    <Box className="table-editor" sx={{ p: 0 }}>
+      <Box className="annotation-header" sx={{ 
+        mb: 1, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        pb: 1,
+        borderBottom: '1px solid #eaeaea'
+      }}>
+        <Typography variant="subtitle1" sx={{ fontSize: '1rem' }}>
+          Editor
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, fontSize: '0.75rem' }}>
+            Click cells to edit. Press Enter to save. Use Shift+Enter for line breaks. Press ESC to cancel.
           </Typography>
         </Typography>
         
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<CodeIcon />}
-            onClick={handleExportHtml}
-          >
-            Save HTML
-          </Button>
-        </Box>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<CodeIcon />}
+          onClick={handleExportHtml}
+          size="small"
+        >
+          Save HTML
+        </Button>
       </Box>
 
-      <Box className="table-container">
+      <Box className="table-container" sx={{ 
+        maxHeight: { xs: 'auto', md: 'calc(100vh - 200px)' },
+        overflow: 'auto'
+      }}>
         {tableData.rows.length > 0 ? (
           <table className="table-view">
             <thead>
@@ -375,7 +390,10 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
                       onClick={() => handleCellClick(cell)}
                     >
                       {editingCell && editingCell.id === cell.id ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          flexDirection: 'column'
+                        }}>
                           <TextField
                             ref={editInputRef}
                             value={editValue}
@@ -385,25 +403,37 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
                             size="small"
                             fullWidth
                             autoFocus
-                            sx={{ mr: 1 }}
+                            multiline
+                            minRows={2}
+                            maxRows={8}
+                            sx={{
+                              width: '100%',
+                              '& .MuiOutlinedInput-root': {
+                                padding: '8px',
+                                fontSize: '0.875rem'
+                              }
+                            }}
                           />
-                          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                            <Tooltip title="Save">
-                              <IconButton 
-                                size="small" 
-                                color="primary"
-                                onClick={handleSaveEdit}
-                              >
-                                <SaveIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Cancel">
+                          <Typography variant="caption" sx={{ mt: 0.5, mb: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}>
+                            Shift+Enter for new line, Enter to save
+                          </Typography>
+                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5, gap: 1 }}>
+                            <Tooltip title="Cancel (ESC)">
                               <IconButton 
                                 size="small" 
                                 color="secondary"
                                 onClick={handleCancelEdit}
                               >
                                 <UndoIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Save (Enter)">
+                              <IconButton 
+                                size="small" 
+                                color="primary"
+                                onClick={handleSaveEdit}
+                              >
+                                <SaveIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
                           </Box>
@@ -413,7 +443,15 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
                           title={isCellCorrected(cell.id) ? `Original: ${corrections[cell.id].original}` : "Click to edit"}
                           placement="top"
                         >
-                          <span>{cell.content}</span>
+                          <Box 
+                            sx={{ 
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              minHeight: '20px'
+                            }}
+                          >
+                            {cell.content}
+                          </Box>
                         </Tooltip>
                       )}
                     </td>

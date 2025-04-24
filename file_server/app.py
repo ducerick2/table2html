@@ -2,6 +2,7 @@
 import os
 import json
 import base64
+import shutil
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -13,12 +14,19 @@ CORS(app)  # Enable CORS for all routes
 
 # Configuration
 IMAGES_DIR = os.environ.get('IMAGES_DIR', '/path/to/your/images')  # Set this to your images directory
+EXCLUDED_DIR = os.environ.get('EXCLUDED_DIR', os.path.join(IMAGES_DIR, 'excluded'))  # Default to a subdirectory of images
 PORT = int(os.environ.get('PORT', 5000))
 
 # File index cache
 file_index = None
 index_last_updated = 0
 INDEX_CACHE_DURATION = 300  # seconds (5 minutes)
+
+# Create the excluded directory if it doesn't exist
+def ensure_excluded_dir():
+    if not os.path.exists(EXCLUDED_DIR):
+        os.makedirs(EXCLUDED_DIR, exist_ok=True)
+        print(f"Created excluded directory: {EXCLUDED_DIR}")
 
 def build_file_index():
     """Build or refresh the file index"""
@@ -369,8 +377,6 @@ def get_status():
         "serverTime": datetime.now().isoformat()
     })
 
-
-
 # The only endpoint we really need for HTML editing is:
 @app.route('/api/files/<file_id>/update-html', methods=['POST'])
 def update_html(file_id):
@@ -411,13 +417,74 @@ def update_html(file_id):
     except Exception as e:
         print(f"Error updating HTML file: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    
+
+@app.route('/api/files/<file_id>/exclude', methods=['POST'])
+def exclude_file(file_id):
+    """Move a file and its HTML to the excluded directory"""
+    try:
+        # Make sure the excluded directory exists
+        ensure_excluded_dir()
+        
+        index = build_file_index()
+        
+        # Find file in index
+        file_info = next((file for file in index if file["id"] == file_id), None)
+        if not file_info:
+            return jsonify({"error": "File not found"}), 404
+        
+        image_path = file_info["path"]
+        image_filename = os.path.basename(image_path)
+        
+        # Get HTML path if it exists
+        html_path = file_info.get("htmlPath")
+        html_filename = os.path.basename(html_path) if html_path else None
+        
+        # Get annotation path if it exists
+        annotation_path = file_info.get("annotationPath")
+        annotation_filename = os.path.basename(annotation_path) if annotation_path else None
+        
+        # Move image file
+        excluded_image_path = os.path.join(EXCLUDED_DIR, image_filename)
+        shutil.move(image_path, excluded_image_path)
+        
+        moved_files = [image_filename]
+        
+        # Move HTML file if it exists
+        if html_path and os.path.exists(html_path):
+            excluded_html_path = os.path.join(EXCLUDED_DIR, html_filename)
+            shutil.move(html_path, excluded_html_path)
+            moved_files.append(html_filename)
+        
+        # Move annotation file if it exists
+        if annotation_path and os.path.exists(annotation_path):
+            excluded_annotation_path = os.path.join(EXCLUDED_DIR, annotation_filename)
+            shutil.move(annotation_path, excluded_annotation_path)
+            moved_files.append(annotation_filename)
+        
+        # Force rebuild of the file index
+        global file_index, index_last_updated
+        file_index = None
+        index_last_updated = 0
+        
+        return jsonify({
+            "success": True,
+            "message": f"File moved to excluded directory: {EXCLUDED_DIR}",
+            "excludedDir": EXCLUDED_DIR,
+            "movedFiles": moved_files
+        })
+    except Exception as e:
+        print(f"Error excluding file: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # Initialize mimetypes
     mimetypes.init()
     
+    # Create excluded directory if it doesn't exist
+    ensure_excluded_dir()
+    
     # Start the server
     print(f"Starting server on port {PORT}")
     print(f"Serving images from {IMAGES_DIR}")
+    print(f"Excluded files will be moved to {EXCLUDED_DIR}")
     app.run(host='0.0.0.0', port=PORT, debug=True)

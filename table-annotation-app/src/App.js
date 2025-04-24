@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Container, AppBar, Toolbar, Typography, Box, Paper, Button, CircularProgress, Snackbar, Alert } from '@mui/material';
+import { Container, AppBar, Toolbar, Typography, Box, Paper, Button, CircularProgress, Snackbar, Alert, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 import TableEditor from './components/TableEditor';
 import FileBrowser from './components/FileBrowser';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
@@ -8,6 +8,7 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
   getFileDetails,
   getImageUrl,
@@ -19,8 +20,10 @@ import {
   updateHtml,
   downloadAllAnnotations,
   getServerStatus,
-  getTableFiles
+  getTableFiles,
+  excludeFile
 } from './services/ApiService';
+import ZoomableImage from './components/ZoomableImage';
 
 // Create a theme
 const theme = createTheme({
@@ -47,6 +50,8 @@ function App() {
   const [serverConnected, setServerConnected] = useState(false);
   const [autoSave, setAutoSave] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [mobileView, setMobileView] = useState('both');
+  const [confirmExcludeOpen, setConfirmExcludeOpen] = useState(false);
 
   // Check server status on mount
   useEffect(() => {
@@ -403,11 +408,80 @@ function App() {
     };
   }, [currentFileId, tableHtml, autoSave]);
 
+  // Handle excluding (removing) the current file
+  const handleOpenExcludeDialog = () => {
+    setConfirmExcludeOpen(true);
+  };
+  
+  const handleCloseExcludeDialog = () => {
+    setConfirmExcludeOpen(false);
+  };
+  
+  const handleExcludeFile = async () => {
+    if (!currentFileId) return;
+    
+    try {
+      setIsLoading(true);
+      setLoadingStatus('Moving file to excluded directory...');
+      setConfirmExcludeOpen(false);
+      
+      // First get the files list and find the current index before excluding
+      let nextFileId = null;
+      
+      try {
+        const filesList = await getTableFiles(1, 1000);
+        if (filesList.success && filesList.files && filesList.files.length > 0) {
+          const currentIndex = filesList.files.findIndex(f => f.id === currentFileId);
+          if (currentIndex >= 0) {
+            // Determine the next file to load (either next or previous if at the end)
+            if (currentIndex < filesList.files.length - 1) {
+              // There's a next file
+              nextFileId = filesList.files[currentIndex + 1].id;
+            } else if (currentIndex > 0) {
+              // This is the last file, go to previous
+              nextFileId = filesList.files[currentIndex - 1].id;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error determining next file:', error);
+      }
+      
+      // Now exclude the current file
+      const result = await excludeFile(currentFileId);
+      
+      if (result.success) {
+        console.log(`File ${currentFileId} excluded successfully`);
+        
+        // Navigate to the next file if we found one
+        if (nextFileId) {
+          console.log(`Loading next file: ${nextFileId}`);
+          // Directly call loadFile with the pre-determined next file ID
+          await loadFile(nextFileId);
+        } else {
+          // No files left or couldn't determine next file, go back to file browser
+          console.log('No more files to navigate to, returning to file browser');
+          setCurrentFile(null);
+          setCurrentFileId(null);
+          setCurrentImage(null);
+          setTableHtml(null);
+          setCurrentAnnotations([]);
+        }
+      } else {
+        console.error('Error excluding file:', result.error);
+      }
+    } catch (error) {
+      console.error('Error excluding file:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+        <Toolbar variant="dense">
+          <Typography variant="h6" sx={{ flexGrow: 1, fontSize: '1.1rem' }}>
             Table HTML Editor
           </Typography>
           
@@ -416,14 +490,20 @@ function App() {
               color="inherit"
               startIcon={<ArrowBackIcon />}
               onClick={handleBackToFiles}
+              size="small"
             >
-              Back to Files
+              Back
             </Button>
           ) : null}
         </Toolbar>
       </AppBar>
       
-      <Container className="container" maxWidth="lg">
+      <Box sx={{ 
+        width: '100%',
+        px: 1, // Just 8px padding on left and right
+        py: 0.5, // Minimal top/bottom padding
+        boxSizing: 'border-box'
+      }}>
         {!serverConnected ? (
           <Paper elevation={3} sx={{ p: 3, mt: 4, textAlign: 'center' }}>
             <Typography variant="h5" color="error" gutterBottom>
@@ -463,25 +543,32 @@ function App() {
           </Box>
         ) : (
           <Box sx={{ my: 4 }}>
-            <Paper elevation={3} sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Paper elevation={3} sx={{ p: { xs: 1, sm: 2 } }}>
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                mb: 1,
+                pb: 1,
+                borderBottom: '1px solid #eaeaea'
+              }}>
                 <Box>
-                  <Typography variant="h6">
+                  <Typography variant="h6" sx={{ fontSize: '1.1rem' }}>
                     {currentFile.name}
                   </Typography>
-                  <Typography variant="body2" color="textSecondary">
+                  <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
                     {currentFile.hasHtml ? 'HTML Available' : 'No HTML File'} 
-                    {currentFile.hasAnnotation ? ' • Has Annotations' : ' • No Annotations Yet'}
                   </Typography>
                 </Box>
                 
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
                       variant="outlined"
                       startIcon={<NavigateBeforeIcon />}
                       onClick={handlePrevFile}
                       disabled={isLoading}
+                      size="small"
                     >
                       Previous
                     </Button>
@@ -491,13 +578,14 @@ function App() {
                       endIcon={<NavigateNextIcon />}
                       onClick={handleNextFile}
                       disabled={isLoading}
+                      size="small"
                     >
                       Next
                     </Button>
                   </Box>
                   
-                  <Typography variant="body2" color="textSecondary">
-                    Keyboard shortcuts: ← Previous File | → Next File
+                  <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, fontSize: '0.75rem', textAlign: 'right' }}>
+                    Keyboard: ← Previous | → Next
                   </Typography>
                 </Box>
               </Box>
@@ -511,39 +599,65 @@ function App() {
                 </Box>
               ) : (
                 <Box>
-                  {currentImage && (
-                    <Box sx={{ mb: 3, textAlign: 'center' }}>
-                      <Typography variant="subtitle1" gutterBottom>
-                        Table Image:
-                      </Typography>
-                      <Box
-                        component="img"
-                        src={currentImage}
-                        alt="Table"
-                        sx={{
-                          maxWidth: '100%',
-                          maxHeight: '300px',
-                          border: '1px solid #ddd',
-                          borderRadius: '4px'
-                        }}
-                      />
+                  {currentImage && tableHtml ? (
+                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
+                      {/* Left side - Image panel */}
+                      <Box sx={{ 
+                        width: { xs: '100%', md: '40%' }, 
+                        position: { md: 'sticky' },
+                        top: { md: '8px' },
+                        alignSelf: { md: 'flex-start' }
+                      }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                          <Typography variant="caption" sx={{ pl: 1 }}>
+                            Table Image:
+                          </Typography>
+                          
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={handleOpenExcludeDialog}
+                            size="small"
+                            sx={{ 
+                              minWidth: 'auto', 
+                              py: 0.5, 
+                              fontSize: '0.75rem', 
+                              height: 'fit-content'
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </Box>
+                        <ZoomableImage 
+                          src={currentImage} 
+                          alt="Table" 
+                        />
+                      </Box>
+
+                      {/* Right side - HTML editor */}
+                      <Box sx={{ 
+                        width: { xs: '100%', md: '55%' },
+                        display: { 
+                          xs: (mobileView === 'editor' || mobileView === 'both') ? 'block' : 'none',
+                          md: 'block'
+                        }
+                      }}>
+                        <TableEditor
+                          ref={tableEditor}
+                          tableHtml={tableHtml}
+                          onAnnotationSaved={handleAnnotationSaved}
+                          existingAnnotations={currentAnnotations}
+                          onExportHtml={handleExportHtml}
+                          autoSave={autoSave}
+                          onEditingStateChange={setIsEditing}
+                        />
+                      </Box>
                     </Box>
-                  )}
-                  
-                  {tableHtml ? (
-                    <TableEditor
-                      ref={tableEditor}
-                      tableHtml={tableHtml}
-                      onAnnotationSaved={handleAnnotationSaved}
-                      existingAnnotations={currentAnnotations}
-                      onExportHtml={handleExportHtml}
-                      autoSave={autoSave}
-                      onEditingStateChange={setIsEditing}
-                    />
                   ) : (
                     <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
-                      No HTML content available for this image.
-                      Make sure there is an HTML file with the same name as the image file.
+                      {currentImage ? 'No HTML content available for this image.' : 
+                        'No image available. Select a file from the browser.'}
                     </Typography>
                   )}
                 </Box>
@@ -551,7 +665,33 @@ function App() {
             </Paper>
           </Box>
         )}
-      </Container>
+      </Box>
+      
+      {/* Confirmation Dialog for Excluding a File */}
+      <Dialog
+        open={confirmExcludeOpen}
+        onClose={handleCloseExcludeDialog}
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">
+          {"Remove this file?"}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            This will move the image file and its corresponding HTML file to the excluded directory.
+            This action cannot be undone from the application.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseExcludeDialog} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleExcludeFile} color="error" autoFocus>
+            Remove
+          </Button>
+        </DialogActions>
+      </Dialog>
     </ThemeProvider>
   );
 }
