@@ -1,0 +1,95 @@
+/* TableEditor specific styles */
+
+/* Make sure the inline editor has a solid background */
+.inline-editor-container {
+  background-color: white !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+  border-radius: 4px !important;
+  padding: 8px !important;
+  position: absolute !important;
+  z-index: 9999 !important; /* Extremely high z-index to be above everything */
+  min-width: 200px;
+  width: calc(100% - 20px); /* Leave a small margin */
+  margin: 0 auto;
+  left: 10px;
+  top: 10px;
+  border: 1px solid #ccc;
+}
+
+/* Force white background on all editor elements */
+.inline-editor-container,
+.inline-editor-container > *,
+.inline-editor-container div,
+.inline-editor-container svg,
+.inline-editor-container input,
+.inline-editor-container textarea {
+  background-color: white !important;
+}
+
+/* Make sure our editor is opaque */
+.inline-editor-container {
+  opacity: 1 !important;
+}
+
+/* Apply styles to all nested elements */
+.inline-editor-container * {
+  background-color: white !important;
+}
+
+/* Style the TextField inside the inline editor */
+.inline-editor-container .MuiTextField-root {
+  background-color: white !important;
+}
+
+.inline-editor-container .MuiInputBase-root {
+  background-color: white !important;
+  color: black !important;
+}
+
+.inline-editor-container .MuiInputBase-input {
+  background-color: white !important;
+  color: black !important;
+  font-family: monospace !important;
+}
+
+/* Style editor controls */
+.editor-controls {
+  background-color: white !important;
+  padding: 4px !important;
+  border-top: 1px solid #f0f0f0 !important;
+}
+
+/* Add styling for the cell being edited */
+td.cell-being-edited {
+  position: relative !important;
+  padding: 0 !important;
+  border: 2px solid #1976d2 !important;
+  background-color: transparent !important; /* Make the cell transparent so we don't get double background */
+}
+
+/* Editor fullscreen dialog styles */
+.fullscreen-editor-dialog .MuiPaper-root {
+  background-color: white !important;
+}
+
+.fullscreen-editor-dialog .MuiDialog-paper {
+  background-color: white !important;
+}
+
+.fullscreen-editor-dialog .MuiDialogContent-root {
+  background-color: white !important;
+}
+
+.fullscreen-editor-dialog .MuiTextField-root {
+  background-color: white !important;
+}
+
+.fullscreen-editor-dialog .MuiInputBase-root {
+  background-color: white !important;
+}
+
+.fullscreen-editor-dialog .MuiInputBase-input {
+  background-color: white !important;
+  color: black !important;
+  font-family: monospace !important;
+} 

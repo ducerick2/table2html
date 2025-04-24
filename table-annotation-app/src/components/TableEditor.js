@@ -1,9 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Typography, TextField, Button, IconButton, Tooltip } from '@mui/material';
+import { Box, Typography, TextField, Button, IconButton, Tooltip, TableContainer, Table, TableBody, TableRow, TableCell, Paper, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import UndoIcon from '@mui/icons-material/Undo';
 import DownloadIcon from '@mui/icons-material/Download';
 import CodeIcon from '@mui/icons-material/Code';
+import EditIcon from '@mui/icons-material/Edit';
+import clsx from 'clsx';
+import { styled } from '@mui/material/styles';
+
+const CustomDialog = styled(Dialog)(({ theme }) => ({
+  '& .MuiBackdrop-root': {
+    backgroundColor: 'transparent',
+  },
+  '& .MuiDialog-paper': {
+    position: 'absolute',
+    right: 0,
+    top: '20%',
+    margin: 0,
+    width: '45%',
+    maxWidth: '500px',
+    overflow: 'visible',
+    boxShadow: theme.shadows[4],
+  },
+}));
 
 const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAnnotations = [], onExportHtml, autoSave = true, onEditingStateChange = () => {} }, ref) => {
   const [tableData, setTableData] = useState({ rows: [], headers: [] });
@@ -12,65 +31,81 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
   const [corrections, setCorrections] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
   const editInputRef = useRef(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Updated parseHtmlTable function to handle colspan and rowspan
+  const parseHtmlTable = (tableHtml) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(tableHtml, 'text/html');
+    const tableElement = doc.querySelector('table');
+    
+    if (!tableElement) {
+      console.error('No table found in HTML');
+      return { rows: [], originalTable: null };
+    }
+    
+    const rows = [];
+    const rowElements = tableElement.querySelectorAll('tr');
+    
+    // Create a grid to track which cells are occupied by rowspan/colspan
+    const grid = [];
+    
+    rowElements.forEach((rowElement, rowIndex) => {
+      const row = [];
+      const cells = rowElement.querySelectorAll('th, td');
+      
+      // Initialize this row in the grid if it doesn't exist
+      if (!grid[rowIndex]) {
+        grid[rowIndex] = [];
+      }
+      
+      let colIndex = 0;
+      cells.forEach((cell) => {
+        // Skip cells that are already occupied by rowspan from above
+        while (grid[rowIndex][colIndex]) {
+          colIndex++;
+        }
+        
+        const rowspan = parseInt(cell.getAttribute('rowspan')) || 1;
+        const colspan = parseInt(cell.getAttribute('colspan')) || 1;
+        const isHeader = cell.tagName.toLowerCase() === 'th';
+        const cellText = cell.innerHTML.trim();
+        
+        row.push({
+          text: cellText,
+          isHeader,
+          rowspan,
+          colspan,
+          originalCell: cell,
+          rowIndex,
+          colIndex
+        });
+        
+        // Mark the grid as occupied for this cell and any cells it spans
+        for (let r = 0; r < rowspan; r++) {
+          if (!grid[rowIndex + r]) {
+            grid[rowIndex + r] = [];
+          }
+          for (let c = 0; c < colspan; c++) {
+            grid[rowIndex + r][colIndex + c] = { spannedBy: { row: rowIndex, col: colIndex } };
+          }
+        }
+        
+        colIndex += colspan;
+      });
+      
+      rows.push(row);
+    });
+    
+    return { rows, originalTable: tableElement };
+  };
 
   // Parse the HTML table into a structured format
   useEffect(() => {
     if (!tableHtml) return;
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(tableHtml, 'text/html');
-    const table = doc.querySelector('table');
-    
-    if (!table) {
-      console.error('Invalid table structure received');
-      return;
-    }
-
-    const rows = [];
-    const headers = [];
-    
-    // Process table rows
-    const allRows = table.querySelectorAll('tr');
-    
-    // Check if the first row contains th elements (header cells)
-    const firstRow = allRows[0];
-    const hasHeaderRow = firstRow && firstRow.querySelector('th');
-    
-    allRows.forEach((tr, rowIndex) => {
-      // If first row has headers and this is the first row, treat as headers
-      if (hasHeaderRow && rowIndex === 0) {
-        tr.querySelectorAll('th').forEach((th) => {
-          headers.push(th.textContent.trim());
-        });
-      } else {
-        const rowData = [];
-        // Check for both th and td elements in case the structure is inconsistent
-        const cells = tr.querySelectorAll('td, th');
-        cells.forEach((cell, colIndex) => {
-          rowData.push({
-            id: `cell-${rowIndex}-${colIndex}`,
-            content: cell.textContent.trim(),
-            row: rows.length, // Store the actual index in our rows array, not the HTML row index
-            col: colIndex,
-            isHeader: cell.tagName.toLowerCase() === 'th'
-          });
-        });
-        
-        if (rowData.length > 0) {
-          rows.push(rowData);
-        }
-      }
-    });
-
-    // If we didn't find any headers but have rows, create default headers
-    if (headers.length === 0 && rows.length > 0) {
-      const firstRowLength = rows[0].length;
-      for (let i = 0; i < firstRowLength; i++) {
-        headers.push(`Column ${i+1}`);
-      }
-    }
-
-    setTableData({ rows, headers });
+    const parsedTable = parseHtmlTable(tableHtml);
+    setTableData(parsedTable);
   }, [tableHtml]);
 
   // Load existing annotations when they change
@@ -105,7 +140,7 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
             // Update the cell content with the corrected value
             updatedRows[rowIndex][cellIndex] = {
               ...updatedRows[rowIndex][cellIndex],
-              content: correction.corrected
+              text: correction.corrected
             };
             break;
           }
@@ -116,191 +151,169 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
     }
   }, [tableData.headers, corrections]);
 
-  // Handle cell click to start editing
-  const handleCellClick = (cell) => {
-    setEditingCell(cell);
-    setEditValue(cell.content);
-    
-    // Focus on the input after it's rendered
-    setTimeout(() => {
-      if (editInputRef.current) {
-        editInputRef.current.focus();
-      }
-    }, 0);
+  // Modify handleCellClick to open the dialog
+  const handleCellClick = (rowIndex, cellIndex) => {
+    const cell = tableData.rows[rowIndex][cellIndex];
+    setEditingCell({ rowIndex, cellIndex });
+    setEditValue(cell.text);
+    setDialogOpen(true);
   };
 
-  // Save the edited cell value
-  const handleSaveEdit = () => {
-    if (!editingCell) return;
+  // Add functions to handle dialog close and save
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+    setEditingCell(null);
+    setEditValue('');
+  };
 
-    try {
-      // Update the table data
-      const newRows = [...tableData.rows];
+  const handleSaveDialog = () => {
+    if (editingCell) {
+      const { rowIndex, cellIndex } = editingCell;
       
-      // Find the row and cell by row and column indices instead of relying on row - 1
-      // This avoids issues with how rows are parsed
-      const rowIndex = editingCell.row;
-      let cellRow;
-      
-      // Find the appropriate row
-      if (rowIndex < 0 || rowIndex >= newRows.length) {
-        // If row index is out of bounds, try using array index directly
-        cellRow = newRows.find((_, index) => index === Math.max(0, Math.min(rowIndex, newRows.length - 1)));
-      } else {
-        // Normal case - the row index is directly usable
-        cellRow = newRows[rowIndex];
-      }
-      
-      // If we still don't have a valid row, try finding by matching cell ID pattern
-      if (!cellRow) {
-        // Extract row number from cell ID (format: "cell-{row}-{col}")
-        const idMatch = editingCell.id.match(/cell-(\d+)-(\d+)/);
-        if (idMatch && idMatch[1]) {
-          const rowNum = parseInt(idMatch[1], 10);
-          // Look for row with cells that have this row number in their ID
-          for (let i = 0; i < newRows.length; i++) {
-            if (newRows[i].some(cell => cell.id.includes(`cell-${rowNum}-`))) {
-              cellRow = newRows[i];
-              break;
-            }
-          }
-        }
-      }
-      
-      // If we still don't have a valid row, find the cell directly in all rows
-      if (!cellRow) {
-        for (let i = 0; i < newRows.length; i++) {
-          const foundCellIndex = newRows[i].findIndex(c => c.id === editingCell.id);
-          if (foundCellIndex !== -1) {
-            cellRow = newRows[i];
-            break;
-          }
-        }
-      }
-      
-      // If we found a valid row, proceed with the update
-      if (cellRow) {
-        const cellIndex = cellRow.findIndex(c => c.id === editingCell.id);
+      // Update the text in our data structure
+      const updatedRows = [...tableData.rows];
+      if (updatedRows[rowIndex] && updatedRows[rowIndex][cellIndex]) {
+        updatedRows[rowIndex][cellIndex].text = editValue;
+        setTableData({
+          ...tableData,
+          rows: updatedRows
+        });
         
-        if (cellIndex !== -1) {
-          const originalContent = cellRow[cellIndex].content;
-          
-          // Only save if content was changed
-          if (originalContent !== editValue) {
-            // Update the cell content
-            cellRow[cellIndex] = {
-              ...cellRow[cellIndex],
-              content: editValue
-            };
-            
-            // Store the correction
-            setCorrections({
-              ...corrections,
-              [editingCell.id]: {
-                original: originalContent,
-                corrected: editValue,
-                timestamp: new Date().toISOString()
-              }
-            });
-            
-            // Update hasChanges flag
-            setHasChanges(true);
-            
-            // Save the annotation
-            onAnnotationSaved({
-              id: editingCell.id,
-              originalText: originalContent,
-              correctedText: editValue,
-              position: {
-                row: editingCell.row,
-                col: editingCell.col
-              },
-              timestamp: new Date().toISOString()
-            });
-            
-            console.log('Cell correction saved');
-          }
-        } else {
-          console.error('Could not find cell with ID:', editingCell.id);
-          console.error('Error saving correction: Cell not found');
+        // If auto-save is enabled, save the HTML immediately
+        if (autoSave && onExportHtml) {
+          const correctedHtml = generateFinalHtml();
+          onExportHtml(correctedHtml);
+          console.log('Auto-saved edited cell');
+          setHasChanges(false);
         }
-      } else {
-        console.error('Could not find row for cell:', editingCell);
-        console.error('Error saving correction: Row not found');
       }
-    } catch (error) {
-      console.error('Error saving edit:', error);
-      console.error('Error saving correction:', error);
-    } finally {
-      // Always clear editing state
+      
+      setDialogOpen(false);
       setEditingCell(null);
       setEditValue('');
     }
   };
 
-  // Handle cancel editing
-  const handleCancelEdit = () => {
-    setEditingCell(null);
-    setEditValue('');
-  };
-
-  // Handle key press in the edit input
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      // If shift key is pressed with Enter, allow normal behavior (line break)
-      if (e.shiftKey) {
-        return; // Let the default behavior occur (new line)
-      } else {
-        // No shift key, so save the edit
-        e.preventDefault();
-        handleSaveEdit();
-      }
-    } else if (e.key === 'Escape') {
-      handleCancelEdit();
-    }
-  };
-
-  // Generate corrected HTML
+  // Updated function to generate corrected HTML
   const generateCorrectedHtml = () => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(tableHtml, 'text/html');
-    const table = doc.querySelector('table');
-    
-    if (!table) {
-      console.error('Cannot generate corrected HTML: invalid table structure');
+    if (!tableData || !tableData.originalTable) {
+      console.error('No table data available');
       return '';
     }
     
-    // Get all rows from the table
-    const allRows = table.querySelectorAll('tr');
-    const hasHeaderRow = allRows[0] && allRows[0].querySelector('th');
+    // Create a deep clone of the original table to preserve structure
+    const clonedTable = tableData.originalTable.cloneNode(true);
     
-    // Apply corrections to the HTML
-    tableData.rows.forEach((row, dataRowIndex) => {
-      // Calculate the actual row index in the HTML table
-      // If there's a header row, we need to offset by 1
-      const htmlRowIndex = hasHeaderRow ? dataRowIndex + 1 : dataRowIndex;
-      
-      // Make sure the row exists in the HTML
-      if (htmlRowIndex < allRows.length) {
-        row.forEach((cell) => {
-          if (isCellCorrected(cell.id)) {
-            const tr = allRows[htmlRowIndex];
-            // Use the appropriate selector based on cell type
-            const cellSelector = cell.isHeader ? 'th' : 'td';
-            const cells = tr.querySelectorAll(cellSelector);
-            
-            if (cell.col < cells.length) {
-              // Update the cell content with the corrected text
-              cells[cell.col].textContent = cell.content;
-            }
-          }
-        });
-      }
+    // First, create a map of cell data for easy lookup
+    const cellMap = new Map();
+    tableData.rows.forEach((row, rowIdx) => {
+      row.forEach((cell, colIdx) => {
+        // Store using a unique key that includes original position info
+        const key = `${cell.rowIndex}:${cell.colIndex}`;
+        cellMap.set(key, cell);
+      });
     });
     
-    // Return the corrected HTML
-    return table.outerHTML;
+    // Process each row in the cloned table
+    const rows = clonedTable.querySelectorAll('tr');
+    rows.forEach((row, rowIdx) => {
+      // Track actual column index, accounting for previous rowspans
+      let actualColIdx = 0;
+      
+      // Get all cells in this row (both th and td)
+      const cells = Array.from(row.querySelectorAll('th, td'));
+      cells.forEach((cell, visibleColIdx) => {
+        // Calculate the key for our data
+        const key = `${rowIdx}:${actualColIdx}`;
+        
+        // Get our edited cell data
+        const cellData = cellMap.get(key);
+        
+        if (cellData) {
+          // Update the content of the cell
+          cell.innerHTML = cellData.text;
+        }
+        
+        // Advance column index by colspan value
+        const colspan = parseInt(cell.getAttribute('colspan')) || 1;
+        actualColIdx += colspan;
+      });
+    });
+    
+    return clonedTable.outerHTML;
+  };
+
+  // Alternative implementation using a matrix-based approach
+  // This might be more reliable for complex tables
+  const generateCorrectedHtmlMatrix = () => {
+    if (!tableData || !tableData.originalTable) {
+      console.error('No table data available');
+      return '';
+    }
+    
+    // Clone the original table
+    const clonedTable = tableData.originalTable.cloneNode(true);
+    
+    // Create a virtual matrix of the same size as our parsed data
+    // to map positions in the original table
+    const matrix = [];
+    const rows = clonedTable.querySelectorAll('tr');
+    
+    // Initialize the matrix
+    for (let i = 0; i < rows.length; i++) {
+      matrix[i] = [];
+    }
+    
+    // Fill the matrix with references to DOM cells
+    // This accounts for colspan and rowspan
+    let rowIndex = 0;
+    rows.forEach(row => {
+      let colIndex = 0;
+      const cells = row.querySelectorAll('th, td');
+      
+      cells.forEach(cell => {
+        // Find the next available position in the matrix
+        while (matrix[rowIndex][colIndex]) {
+          colIndex++;
+        }
+        
+        // Get spans
+        const colspan = parseInt(cell.getAttribute('colspan')) || 1;
+        const rowspan = parseInt(cell.getAttribute('rowspan')) || 1;
+        
+        // Fill the matrix with references to this cell
+        for (let r = 0; r < rowspan; r++) {
+          for (let c = 0; c < colspan; c++) {
+            if (!matrix[rowIndex + r]) matrix[rowIndex + r] = [];
+            matrix[rowIndex + r][colIndex + c] = { 
+              cell, 
+              mainCell: r === 0 && c === 0
+            };
+          }
+        }
+        
+        colIndex += colspan;
+      });
+      
+      rowIndex++;
+    });
+    
+    // Now update each cell's content from our edited data
+    tableData.rows.forEach((row, rowIdx) => {
+      row.forEach((cellData, colIdx) => {
+        const matrixCell = matrix[cellData.rowIndex][cellData.colIndex];
+        if (matrixCell && matrixCell.mainCell) {
+          matrixCell.cell.innerHTML = cellData.text;
+        }
+      });
+    });
+    
+    return clonedTable.outerHTML;
+  };
+
+  // Use the matrix-based version as it's more reliable
+  const generateFinalHtml = () => {
+    return generateCorrectedHtmlMatrix();
   };
 
   // Export HTML directly back to the original file
@@ -311,7 +324,7 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
     }
     
     // Generate HTML with corrected text
-    const correctedHtml = generateCorrectedHtml();
+    const correctedHtml = generateFinalHtml();
     
     // Save directly back to the original file
     if (onExportHtml) {
@@ -334,13 +347,13 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
   // Expose methods via ref
   React.useImperativeHandle(ref, () => ({
     generateCorrectedHtml: () => {
-      return generateCorrectedHtml();
+      return generateFinalHtml();
     }
   }));
 
   // Render the table editor
   return (
-    <Box className="table-editor" sx={{ p: 0 }}>
+    <Box className="table-editor-container" sx={{ width: '100%', position: 'relative' }}>
       <Box className="annotation-header" sx={{ 
         mb: 1, 
         display: 'flex', 
@@ -372,100 +385,107 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
         overflow: 'auto'
       }}>
         {tableData.rows.length > 0 ? (
-          <table className="table-view">
-            <thead>
-              <tr>
-                {tableData.headers.map((header, index) => (
-                  <th key={`header-${index}`}>{header}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tableData.rows.map((row, rowIndex) => (
-                <tr key={`row-${rowIndex}`}>
-                  {row.map((cell) => (
-                    <td 
-                      key={cell.id} 
-                      className={`editable-cell ${isCellCorrected(cell.id) ? 'corrected-cell' : ''}`}
-                      onClick={() => handleCellClick(cell)}
-                    >
-                      {editingCell && editingCell.id === cell.id ? (
-                        <Box sx={{ 
-                          display: 'flex', 
-                          flexDirection: 'column'
-                        }}>
-                          <TextField
-                            ref={editInputRef}
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onKeyDown={handleKeyPress}
-                            variant="outlined"
-                            size="small"
-                            fullWidth
-                            autoFocus
-                            multiline
-                            minRows={2}
-                            maxRows={8}
-                            sx={{
-                              width: '100%',
-                              '& .MuiOutlinedInput-root': {
-                                padding: '8px',
-                                fontSize: '0.875rem'
-                              }
-                            }}
-                          />
-                          <Typography variant="caption" sx={{ mt: 0.5, mb: 0.5, fontSize: '0.7rem', color: 'text.secondary' }}>
-                            Shift+Enter for new line, Enter to save
-                          </Typography>
-                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5, gap: 1 }}>
-                            <Tooltip title="Cancel (ESC)">
-                              <IconButton 
-                                size="small" 
-                                color="secondary"
-                                onClick={handleCancelEdit}
-                              >
-                                <UndoIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Save (Enter)">
-                              <IconButton 
-                                size="small" 
-                                color="primary"
-                                onClick={handleSaveEdit}
-                              >
-                                <SaveIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
-                        </Box>
-                      ) : (
-                        <Tooltip 
-                          title={isCellCorrected(cell.id) ? `Original: ${corrections[cell.id].original}` : "Click to edit"}
-                          placement="top"
+          <TableContainer component={Paper} className={clsx(
+            'table-view',
+            editingCell && 'editing-cell'
+          )}>
+            <Table className={clsx(
+              'table-view',
+              editingCell && 'editing-cell'
+            )} size="small" sx={{ 
+              tableLayout: 'auto' 
+            }}>
+              <TableBody>
+                {tableData.rows.map((row, rowIndex) => (
+                  <TableRow key={rowIndex}>
+                    {row.map((cell, cellIndex) => {
+                      // Create the cell with proper rowspan/colspan
+                      return (
+                        <TableCell 
+                          key={cellIndex}
+                          align="left"
+                          component={cell.isHeader ? 'th' : 'td'}
+                          scope={cell.isHeader ? 'col' : undefined}
+                          rowSpan={cell.rowspan}
+                          colSpan={cell.colspan}
+                          sx={{
+                            fontWeight: cell.isHeader ? 'bold' : 'normal',
+                            backgroundColor: cell.isHeader ? '#f5f5f5' : 'inherit',
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                            },
+                            padding: '6px',
+                            wordBreak: 'break-word',
+                            minWidth: '50px'
+                          }}
+                          onClick={() => handleCellClick(rowIndex, cellIndex)}
                         >
-                          <Box 
-                            sx={{ 
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              minHeight: '20px'
-                            }}
-                          >
-                            {cell.content}
-                          </Box>
-                        </Tooltip>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                          <div dangerouslySetInnerHTML={{ __html: cell.text }} />
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         ) : (
           <Typography variant="body1" sx={{ textAlign: 'center', py: 4 }}>
             Loading table data...
           </Typography>
         )}
       </Box>
+
+      <CustomDialog 
+        open={dialogOpen} 
+        onClose={handleCloseDialog}
+        hideBackdrop={false}
+        maxWidth={false}
+        container={() => document.querySelector('.table-editor-container')}
+      >
+        <DialogTitle sx={{ 
+          padding: '12px 16px',
+          fontSize: '1rem'
+        }}>
+          Edit Cell {editingCell && `(Row ${editingCell.rowIndex + 1}, Column ${editingCell.cellIndex + 1})`}
+        </DialogTitle>
+        <DialogContent sx={{ padding: '0 16px 16px' }}>
+          <TextField
+            autoFocus
+            margin="dense"
+            fullWidth
+            multiline
+            minRows={3}
+            maxRows={8}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            variant="outlined"
+            onKeyDown={(e) => {
+              // Use Enter to save and close
+              if (e.key === 'Enter') {
+                // If Shift is pressed, allow new line
+                if (e.shiftKey) {
+                  // Default behavior for Shift+Enter (new line)
+                  return;
+                } else {
+                  // Prevent default to avoid adding a new line
+                  e.preventDefault();
+                  // Save and close dialog
+                  handleSaveDialog();
+                }
+              }
+            }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ padding: '0 16px 16px' }}>
+          <Button onClick={handleCloseDialog} size="small">Cancel</Button>
+          <Button onClick={handleSaveDialog} variant="contained" color="primary" size="small">
+            Save
+          </Button>
+        </DialogActions>
+      </CustomDialog>
     </Box>
   );
 });
