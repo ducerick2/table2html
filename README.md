@@ -1,99 +1,94 @@
 # Table Annotation Tool
 
-A web application for annotating and correcting OCR errors in table structures extracted from images. This tool is designed to work with your existing table2html model outputs.
+A web application for annotating and correcting OCR errors in table structures extracted from images. This tool works with HTML tables generated from a table2html model, allowing you to view images alongside the extracted HTML and make corrections to cell contents.
 
 ## Features
 
-- Browse and annotate thousands of table images
-- View and edit table cells with incorrect OCR text
-- Automatically save corrections as annotations
-- Export annotations for later use
-- Visual indicators for corrected cells
-- Modern, responsive UI with Material Design
+- Browse and edit table images and their HTML representations
+- Side-by-side view of original image and HTML table
+- Auto-save corrections when navigating between files
+- Keyboard shortcuts for navigation (left/right arrow keys)
+- Export corrected HTML
 
-## Technology Stack
+## Running the Application with Docker (Recommended)
 
-- React.js for the frontend UI
-- Python Flask for the backend server
-- RESTful API for communication
+### Linux/macOS Users
 
-## Requirements
-
-- Python 3.6 or higher
-- Node.js 14 or higher
-- npm or yarn package manager
-
-## Getting Started
-
-### 1. Using Docker (Recommended)
-
-The easiest way to get started is using Docker:
-
-```bash
-# Set up the environment and start the application
-./run.sh
-```
-
-The script will prompt you for the location of your images directory and start the application.
-
-#### Additional options for run.sh:
-
-```bash
-# Skip rebuilding Docker images (uses existing images)
-./run.sh --no-build
-
-# Run containers in detached mode (background)
-./run.sh --detach
-# or
-./run.sh -d
-
-# Display help information
-./run.sh --help
-```
-
-#### Using Pre-built Docker Images
-
-If you or your team have pushed pre-built Docker images to Docker Hub:
-
-1. Pull the images from Docker Hub:
+1. **Using Pre-built Docker Images** (Recommended):
    ```bash
-   docker pull your-username/table-annotation-frontend:latest
-   docker pull your-username/table-annotation-backend:latest
-   ```
-
-2. Update your docker-compose.yml to use these images instead of building locally:
-   ```yaml
-   services:
-     frontend:
-       image: your-username/table-annotation-frontend:latest
-       # ...other settings remain the same
-     
-     backend:
-       image: your-username/table-annotation-backend:latest
-       # ...other settings remain the same
-   ```
-
-3. Run the application with the `--no-build` flag:
-   ```bash
+   # Pull pre-built images
+   docker pull fioresxcat/table2html-annotation:frontend
+   docker pull fioresxcat/table2html-annotation:backend
+   
+   # Setup using helper script
+   ./use_docker_hub_images.sh
+   
+   # Run the application (after images are pulled)
    ./run.sh --no-build
    ```
 
-This approach allows team members to use the same pre-built images without having to rebuild them locally.
+2. **Building Images Locally** (If pre-built images don't work):
+   ```bash
+   # Clone the repository
+   git clone https://github.com/fioresxcat/table2html-annotation.git
+   cd table2html-annotation
+   
+   # Run the application (this will build images locally)
+   ./run.sh
+   ```
 
-### 2. Setup the Python Backend Manually
+### Windows Users
+
+1. **Using Pre-built Docker Images** (Recommended):
+   ```cmd
+   :: Pull pre-built images
+   docker pull fioresxcat/table2html-annotation:frontend
+   docker pull fioresxcat/table2html-annotation:backend
+   
+   :: Setup using helper script
+   use_docker_hub_images.bat
+   
+   :: Run the application (after images are pulled)
+   run.bat --no-build
+   ```
+
+2. **Building Images Locally** (If pre-built images don't work):
+   ```cmd
+   :: Clone the repository
+   git clone https://github.com/fioresxcat/table2html-annotation.git
+   cd table2html-annotation
+   
+   :: Run the application (this will build images locally)
+   run.bat
+   ```
+
+When using the application with Docker:
+- You'll be prompted to enter the path to your images directory
+- The application will be available at http://localhost
+- Use the `--detach` or `-d` flag to run in the background
+- Use the `--help` flag to see all available options
+
+## Manual Setup (Without Docker)
+
+If you prefer not to use Docker, you can set up the application manually:
+
+### 1. Backend Setup
 
 ```bash
-# Install required Python packages
+# Navigate to the backend directory
+cd file_server
+
+# Install dependencies
 pip install -r requirements.txt
 
 # Start the server
 python run.py --images-dir /path/to/your/images
 ```
 
-### 3. Setup the React Frontend
+### 2. Frontend Setup
 
 ```bash
-# In another terminal, navigate to the project directory
+# Navigate to the frontend directory
 cd table-annotation-app
 
 # Install dependencies
@@ -103,20 +98,13 @@ npm install
 npm start
 ```
 
-### 4. Using the Application
-
-1. Open your browser to `http://localhost:3000`
-2. Browse through the table images
-3. Edit any cell by clicking on it
-4. Press Enter to save your changes
-5. Use the navigation buttons to move between files
-6. Export corrected HTML or annotations as needed
+The application will be available at http://localhost:3000
 
 ## Usage Tips
 
-- For best performance, make sure your images and HTML files have matching filenames
-- Large directories will be paginated for better performance
-- Annotations are saved automatically when you edit a cell
+- Make sure your images and corresponding HTML files have matching filenames
+- Edit any cell by clicking on it and pressing Enter to save changes
+- Use keyboard arrow keys (← and →) to navigate between images
 
 ## File Structure
 
