@@ -48,6 +48,8 @@ Note: You must have **docker** and **docker-compose** installed on your machine
 
 ### Windows Users
 
+Commands should be run in **Windows Terminal** or **Windows Powershell**
+
 1. **Using Pre-built Docker Images** (Recommended):
    ```cmd
    :: Pull pre-built images
