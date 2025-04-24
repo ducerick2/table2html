@@ -10,6 +10,13 @@ A web application for annotating and correcting OCR errors in table structures e
 - Keyboard shortcuts for navigation (left/right arrow keys)
 - Export corrected HTML
 
+## Usage Tips
+
+- Make sure your images and corresponding HTML files have matching filenames, and in the same folder
+- Edit any cell by clicking on it and pressing Enter to save changes
+- Use keyboard arrow keys (← and →) to navigate between images
+- The app is always in auto-save mode (switching to next/previous image will auto save annotation for current image)
+
 ## Running the Application with Docker (Recommended)
 
 Note: You must have **docker** and **docker-compose** installed on your machine
@@ -102,18 +109,6 @@ npm start
 
 The application will be available at http://localhost:3000
 
-## Usage Tips
-
-- Make sure your images and corresponding HTML files have matching filenames
-- Edit any cell by clicking on it and pressing Enter to save changes
-- Use keyboard arrow keys (← and →) to navigate between images
-
-## File Structure
-
-- Images and HTML files should be in the same directory
-- HTML files should have the same name as the image (e.g., image1.jpg → image1.html)
-- Annotations will be saved as JSON files (e.g., image1_annotations.json)
-- Corrected HTML will be saved with a "_corrected" suffix (e.g., image1_corrected.html)
 
 ## Handling Large Datasets
 
