@@ -26,6 +26,10 @@ if ! command -v docker-compose &> /dev/null; then
     exit 1
 fi
 
+# Remove existing images if they exist
+echo -e "${BLUE}Removing existing images (if any)...${NORMAL}"
+docker rmi ${REPOSITORY}:frontend ${REPOSITORY}:backend || true
+
 # Pull the latest images
 echo -e "${BLUE}Pulling latest images from Docker Hub...${NORMAL}"
 docker pull ${REPOSITORY}:frontend
