@@ -2,36 +2,6 @@
 
 A web-based annotation tool for Image2Text tasks that handles both regular text and HTML tables. This tool allows users to view images alongside their corresponding text content, edit text, and annotate tables in a user-friendly interface.
 
-## Features
-
-- **Dual View Interface**
-  - Image viewer on the left
-  - Text editor on top right
-  - Table editor on bottom right
-
-- **Text Handling**
-  - View and edit text content
-  - Automatic table detection and parsing
-  - Support for multiple tables per file
-  - Auto-saving functionality
-
-- **Table Editing**
-  - Interactive table cell editing
-  - Table navigation for files with multiple tables
-  - Cell-level annotation support
-  - HTML table structure preservation
-
-- **File Management**
-  - Browse and navigate through files
-  - Pagination support
-  - File exclusion capability
-  - External file modification detection
-
-- **User Interface**
-  - Clean, modern Material-UI design
-  - Responsive layout
-  - Progress indicators for operations
-  - Error notifications
 
 ## Prerequisites
 
