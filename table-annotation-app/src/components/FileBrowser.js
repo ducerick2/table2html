@@ -9,13 +9,17 @@ import { green } from '@mui/material/colors';
 import { getTableFiles } from '../services/ApiService';
 import { toast } from 'react-toastify';
 
-const FileBrowser = ({ onFileSelected }) => {
+const FileBrowser = ({ onFileSelected, initialPage = 1 }) => {
   const [files, setFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialPage);
   const [totalPages, setTotalPages] = useState(1);
   const [totalFiles, setTotalFiles] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    setPage(initialPage);
+  }, [initialPage]);
 
   useEffect(() => {
     fetchFiles();

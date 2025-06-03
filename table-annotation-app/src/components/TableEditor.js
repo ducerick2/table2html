@@ -24,7 +24,15 @@ const CustomDialog = styled(Dialog)(({ theme }) => ({
   },
 }));
 
-const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAnnotations = [], onExportHtml, autoSave = true, onEditingStateChange = () => {} }, ref) => {
+const TableEditor = React.forwardRef(({ 
+  tableHtml, 
+  onAnnotationSaved, 
+  existingAnnotations = [], 
+  onExportHtml, 
+  autoSave = true, 
+  onEditingStateChange = () => {},
+  hideInstructions = false
+}, ref) => {
   const [tableData, setTableData] = useState({ rows: [], headers: [] });
   const [editingCell, setEditingCell] = useState(null);
   const [editValue, setEditValue] = useState('');
@@ -204,39 +212,16 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
     // Create a deep clone of the original table to preserve structure
     const clonedTable = tableData.originalTable.cloneNode(true);
     
-    // First, create a map of cell data for easy lookup
-    const cellMap = new Map();
-    tableData.rows.forEach((row, rowIdx) => {
-      row.forEach((cell, colIdx) => {
-        // Store using a unique key that includes original position info
-        const key = `${cell.rowIndex}:${cell.colIndex}`;
-        cellMap.set(key, cell);
-      });
-    });
-    
     // Process each row in the cloned table
     const rows = clonedTable.querySelectorAll('tr');
     rows.forEach((row, rowIdx) => {
-      // Track actual column index, accounting for previous rowspans
-      let actualColIdx = 0;
-      
       // Get all cells in this row (both th and td)
       const cells = Array.from(row.querySelectorAll('th, td'));
-      cells.forEach((cell, visibleColIdx) => {
-        // Calculate the key for our data
-        const key = `${rowIdx}:${actualColIdx}`;
-        
-        // Get our edited cell data
-        const cellData = cellMap.get(key);
-        
-        if (cellData) {
-          // Update the content of the cell
-          cell.innerHTML = cellData.text;
+      cells.forEach((cell, colIdx) => {
+        // Update the cell content if we have edited data for this position
+        if (tableData.rows[rowIdx] && tableData.rows[rowIdx][colIdx]) {
+          cell.innerHTML = tableData.rows[rowIdx][colIdx].text;
         }
-        
-        // Advance column index by colspan value
-        const colspan = parseInt(cell.getAttribute('colspan')) || 1;
-        actualColIdx += colspan;
       });
     });
     
@@ -287,7 +272,9 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
             if (!matrix[rowIndex + r]) matrix[rowIndex + r] = [];
             matrix[rowIndex + r][colIndex + c] = { 
               cell, 
-              mainCell: r === 0 && c === 0
+              mainCell: r === 0 && c === 0,
+              originalRow: rowIndex,
+              originalCol: colIndex
             };
           }
         }
@@ -299,14 +286,17 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
     });
     
     // Now update each cell's content from our edited data
-    tableData.rows.forEach((row, rowIdx) => {
-      row.forEach((cellData, colIdx) => {
-        const matrixCell = matrix[cellData.rowIndex][cellData.colIndex];
+    for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
+      for (let colIdx = 0; colIdx < matrix[rowIdx].length; colIdx++) {
+        const matrixCell = matrix[rowIdx][colIdx];
         if (matrixCell && matrixCell.mainCell) {
-          matrixCell.cell.innerHTML = cellData.text;
+          // Find the corresponding cell in our edited data
+          if (tableData.rows[rowIdx] && tableData.rows[rowIdx][colIdx]) {
+            matrixCell.cell.innerHTML = tableData.rows[rowIdx][colIdx].text;
+          }
         }
-      });
-    });
+      }
+    }
     
     return clonedTable.outerHTML;
   };
@@ -353,135 +343,80 @@ const TableEditor = React.forwardRef(({ tableHtml, onAnnotationSaved, existingAn
 
   // Render the table editor
   return (
-    <Box className="table-editor-container" sx={{ width: '100%', position: 'relative' }}>
-      <Box className="annotation-header" sx={{ 
-        mb: 1, 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        pb: 1,
-        borderBottom: '1px solid #eaeaea'
-      }}>
-        <Typography variant="subtitle1" sx={{ fontSize: '1rem' }}>
-          Editor
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, fontSize: '0.75rem' }}>
-            Click cells to edit. Press Enter to save. Use Shift+Enter for line breaks. Press ESC to cancel.
-          </Typography>
+    <Box sx={{ height: '100%', overflow: 'hidden' }}>
+      {!hideInstructions && (
+        <Typography variant="body2" sx={{ p: 1, color: 'text.secondary' }}>
+          Click on any cell to edit its content.
         </Typography>
-        
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<CodeIcon />}
-          onClick={handleExportHtml}
-          size="small"
-        >
-          Save HTML
-        </Button>
-      </Box>
-
-      <Box className="table-container" sx={{ 
-        maxHeight: { xs: 'auto', md: 'calc(100vh - 200px)' },
-        overflow: 'auto'
-      }}>
-        {tableData.rows.length > 0 ? (
-          <TableContainer component={Paper} className={clsx(
-            'table-view',
-            editingCell && 'editing-cell'
-          )}>
-            <Table className={clsx(
-              'table-view',
-              editingCell && 'editing-cell'
-            )} size="small" sx={{ 
-              tableLayout: 'auto' 
-            }}>
-              <TableBody>
-                {tableData.rows.map((row, rowIndex) => (
-                  <TableRow key={rowIndex}>
-                    {row.map((cell, cellIndex) => {
-                      // Create the cell with proper rowspan/colspan
-                      return (
-                        <TableCell 
-                          key={cellIndex}
-                          align="left"
-                          component={cell.isHeader ? 'th' : 'td'}
-                          scope={cell.isHeader ? 'col' : undefined}
-                          rowSpan={cell.rowspan}
-                          colSpan={cell.colspan}
-                          sx={{
-                            fontWeight: cell.isHeader ? 'bold' : 'normal',
-                            backgroundColor: cell.isHeader ? '#f5f5f5' : 'inherit',
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: 'rgba(0, 0, 0, 0.04)'
-                            },
-                            padding: '6px',
-                            wordBreak: 'break-word',
-                            minWidth: '50px'
-                          }}
-                          onClick={() => handleCellClick(rowIndex, cellIndex)}
-                        >
-                          <div dangerouslySetInnerHTML={{ __html: cell.text }} />
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        ) : (
-          <Typography variant="body1" sx={{ textAlign: 'center', py: 4 }}>
-            Loading table data...
-          </Typography>
-        )}
-      </Box>
-
-      <CustomDialog 
-        open={dialogOpen} 
-        onClose={handleCloseDialog}
-        hideBackdrop={false}
-        maxWidth={false}
-        container={() => document.querySelector('.table-editor-container')}
+      )}
+      
+      <TableContainer 
+        component={Paper} 
+        sx={{ 
+          height: hideInstructions ? '100%' : 'calc(100% - 40px)',
+          overflow: 'auto',
+          '& table': {
+            borderCollapse: 'collapse',
+            width: '100%',
+          },
+          '& td, & th': {
+            border: '1px solid #e0e0e0',
+            padding: '8px',
+            position: 'relative',
+          }
+        }}
       >
-        <DialogTitle sx={{ 
-          padding: '12px 16px',
-          fontSize: '1rem'
-        }}>
-          Edit Cell {editingCell && `(Row ${editingCell.rowIndex + 1}, Column ${editingCell.cellIndex + 1})`}
-        </DialogTitle>
-        <DialogContent sx={{ padding: '0 16px 16px' }}>
+        <Table>
+          <TableBody>
+            {tableData.rows.map((row, rowIndex) => (
+              <TableRow key={rowIndex}>
+                {row.map((cell, cellIndex) => (
+                  <TableCell
+                    key={`${rowIndex}-${cellIndex}`}
+                    onClick={() => handleCellClick(rowIndex, cellIndex)}
+                    rowSpan={cell.rowspan}
+                    colSpan={cell.colspan}
+                    component={cell.isHeader ? 'th' : 'td'}
+                    align="left"
+                    sx={{
+                      cursor: 'pointer',
+                      backgroundColor: cell.isHeader ? '#f5f5f5' : 'inherit',
+                      '&:hover': {
+                        backgroundColor: '#f0f7ff',
+                      },
+                    }}
+                  >
+                    {cell.text}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <CustomDialog
+        open={dialogOpen}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+      >
+        <DialogTitle>Edit Cell Content</DialogTitle>
+        <DialogContent>
           <TextField
             autoFocus
-            margin="dense"
-            fullWidth
             multiline
+            fullWidth
             minRows={3}
-            maxRows={8}
+            maxRows={10}
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
             variant="outlined"
-            onKeyDown={(e) => {
-              // Use Enter to save and close
-              if (e.key === 'Enter') {
-                // If Shift is pressed, allow new line
-                if (e.shiftKey) {
-                  // Default behavior for Shift+Enter (new line)
-                  return;
-                } else {
-                  // Prevent default to avoid adding a new line
-                  e.preventDefault();
-                  // Save and close dialog
-                  handleSaveDialog();
-                }
-              }
-            }}
             sx={{ mt: 1 }}
           />
         </DialogContent>
-        <DialogActions sx={{ padding: '0 16px 16px' }}>
-          <Button onClick={handleCloseDialog} size="small">Cancel</Button>
-          <Button onClick={handleSaveDialog} variant="contained" color="primary" size="small">
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button onClick={handleSaveDialog} color="primary">
             Save
           </Button>
         </DialogActions>

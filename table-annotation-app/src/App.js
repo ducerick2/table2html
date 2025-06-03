@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Container, AppBar, Toolbar, Typography, Box, Paper, Button, CircularProgress, Snackbar, Alert, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
+import { Container, AppBar, Toolbar, Typography, Box, Paper, Button, CircularProgress, Snackbar, Alert, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Grid } from '@mui/material';
 import TableEditor from './components/TableEditor';
+import TextEditor from './components/TextEditor';
+import TableNavigator from './components/TableNavigator';
 import FileBrowser from './components/FileBrowser';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import { toast } from 'react-toastify';
@@ -13,11 +15,11 @@ import {
   getFileDetails,
   getImageUrl,
   getImageBase64,
-  getHtmlContent,
+  getParsedText,
   getAnnotations,
   saveAnnotations,
-  exportHtml,
-  updateHtml,
+  exportText,
+  updateParsedText,
   downloadAllAnnotations,
   getServerStatus,
   getTableFiles,
@@ -42,7 +44,9 @@ function App() {
   const [filesList, setFilesList] = useState([]);
   const [currentFileId, setCurrentFileId] = useState(null);
   const [currentImage, setCurrentImage] = useState(null);
-  const [tableHtml, setTableHtml] = useState(null);
+  const [outsideText, setOutsideText] = useState('');
+  const [tables, setTables] = useState([]);
+  const [currentTableIndex, setCurrentTableIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [currentAnnotations, setCurrentAnnotations] = useState([]);
@@ -52,6 +56,7 @@ function App() {
   const [isEditing, setIsEditing] = useState(false);
   const [mobileView, setMobileView] = useState('both');
   const [confirmExcludeOpen, setConfirmExcludeOpen] = useState(false);
+  const [lastPageNumber, setLastPageNumber] = useState(1);
 
   // Check server status on mount
   useEffect(() => {
@@ -74,13 +79,12 @@ function App() {
 
   // Load a file by ID
   const loadFile = async (fileId) => {
-    // We'll skip auto-saving here since the navigation functions already handle it
-    // This avoids double-saving and potential race conditions
-    
     setIsLoading(true);
     setLoadingStatus(`Loading file...`);
     setCurrentImage(null);
-    setTableHtml(null);
+    setOutsideText('');
+    setTables([]);
+    setCurrentTableIndex(0);
     setCurrentAnnotations([]);
 
     try {
@@ -92,7 +96,15 @@ function App() {
         return;
       }
 
-      setCurrentFile(fileDetails.file);
+      // Set current file with pagination info
+      setCurrentFile({
+        ...fileDetails.file,
+        pagination: fileDetails.pagination
+      });
+      // Store the page number
+      if (fileDetails.pagination?.currentPage) {
+        setLastPageNumber(fileDetails.pagination.currentPage);
+      }
       setCurrentFileId(fileId);
 
       // Get image (either direct URL or base64)
@@ -107,21 +119,22 @@ function App() {
         setCurrentImage(getImageUrl(fileId));
       }
 
-      // Load HTML if available
-      if (fileDetails.file.hasHtml) {
+      // Load text content if available
+      if (fileDetails.file.hasTxt) {
         try {
-          const htmlResult = await getHtmlContent(fileId);
-          if (htmlResult.success) {
-            setTableHtml(htmlResult.html);
+          const textResult = await getParsedText(fileId);
+          if (textResult.success) {
+            setOutsideText(textResult.outside_text);
+            setTables(textResult.tables);
           } else {
-            toast.error('Error loading HTML content');
+            toast.error('Error loading text content');
           }
         } catch (error) {
-          console.error('Error loading HTML:', error);
-          toast.error(`Error loading HTML: ${error.message}`);
+          console.error('Error loading text:', error);
+          toast.error(`Error loading text: ${error.message}`);
         }
       } else {
-        toast.warning('No HTML file available for this image');
+        toast.warning('No text file available for this image');
       }
 
       // Load annotations if available
@@ -141,17 +154,56 @@ function App() {
     }
   };
 
+  // Handle table navigation
+  const handleTableNavigation = (direction) => {
+    if (direction === 'next' && currentTableIndex < tables.length - 1) {
+      setCurrentTableIndex(prev => prev + 1);
+    } else if (direction === 'prev' && currentTableIndex > 0) {
+      setCurrentTableIndex(prev => prev - 1);
+    }
+  };
+
+  // Handle text content change
+  const handleTextChange = (newText) => {
+    setOutsideText(newText);
+    if (autoSave) {
+      handleAutoSave();
+    }
+  };
+
+  // Handle table content change
+  const handleTableChange = (newTableHtml) => {
+    const newTables = [...tables];
+    newTables[currentTableIndex] = newTableHtml;
+    setTables(newTables);
+    if (autoSave) {
+      handleAutoSave();
+    }
+  };
+
   // Add auto-save function
   const handleAutoSave = async () => {
     try {
-      if (currentFileId && tableEditor.current && tableEditor.current.generateCorrectedHtml) {
-        const correctedHtml = tableEditor.current.generateCorrectedHtml();
-        if (correctedHtml) {
-          await exportHtml(currentFileId, correctedHtml);
+      if (currentFileId) {
+        const result = await updateParsedText(currentFileId, {
+          outside_text: outsideText,
+          tables: tables
+        });
+        
+        if (!result.success) {
+          // Check if the file was modified externally
+          if (result.error && result.error.includes('modified externally')) {
+            toast.warning('File was modified externally. Reloading latest version...');
+            // Reload the current file to get the latest version
+            await loadFile(currentFileId);
+          } else {
+            toast.error(`Error saving: ${result.error}`);
+          }
         }
       }
     } catch (error) {
       console.error('Error auto-saving:', error);
+      toast.error('Error saving changes');
     }
   };
 
@@ -166,17 +218,17 @@ function App() {
     
     try {
       // Ensure we auto-save before navigating
-      if (autoSave && currentFileId && tableHtml) {
+      if (autoSave && currentFileId && tables.length > 0) {
         setIsLoading(true);
         setLoadingStatus('Saving changes...');
         
-        // Make sure we get the latest HTML
+        // Make sure we get the latest tables
         if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
           const correctedHtml = tableEditor.current.generateCorrectedHtml();
           if (correctedHtml) {
-            // Wait for the HTML update to complete
-            await updateHtml(currentFileId, correctedHtml);
-            console.log('Auto-saved HTML before navigation');
+            // Wait for the table update to complete
+            handleTableChange(correctedHtml);
+            console.log('Auto-saved tables before navigation');
           }
         }
       }
@@ -185,7 +237,7 @@ function App() {
       setLoadingStatus('Loading next file...');
       
       // Get files to find the next one
-      const result = await getTableFiles(1, 1000);
+      const result = await getTableFiles(1, 10000);
       if (result.success && result.files && result.files.length > 0) {
         const currentIndex = result.files.findIndex(f => f.id === currentFileId);
         if (currentIndex >= 0 && currentIndex < result.files.length - 1) {
@@ -211,17 +263,17 @@ function App() {
     
     try {
       // Ensure we auto-save before navigating
-      if (autoSave && currentFileId && tableHtml) {
+      if (autoSave && currentFileId && tables.length > 0) {
         setIsLoading(true);
         setLoadingStatus('Saving changes...');
         
-        // Make sure we get the latest HTML
+        // Make sure we get the latest tables
         if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
           const correctedHtml = tableEditor.current.generateCorrectedHtml();
           if (correctedHtml) {
-            // Wait for the HTML update to complete
-            await updateHtml(currentFileId, correctedHtml);
-            console.log('Auto-saved HTML before navigation');
+            // Wait for the table update to complete
+            handleTableChange(correctedHtml);
+            console.log('Auto-saved tables before navigation');
           }
         }
       }
@@ -230,7 +282,7 @@ function App() {
       setLoadingStatus('Loading previous file...');
       
       // Get files to find the previous one
-      const result = await getTableFiles(1, 1000);
+      const result = await getTableFiles(1, 10000);
       if (result.success && result.files && result.files.length > 0) {
         const currentIndex = result.files.findIndex(f => f.id === currentFileId);
         if (currentIndex > 0) {
@@ -250,7 +302,7 @@ function App() {
     }
   };
 
-  // Simplify handleAnnotationSaved to just trigger HTML save
+  // Simplify handleAnnotationSaved to just trigger table save
   const handleAnnotationSaved = async (updatedAnnotation) => {
     if (!currentFileId) return;
     
@@ -267,11 +319,11 @@ function App() {
       
       setCurrentAnnotations(updatedAnnotations);
       
-      // No need to save annotations to JSON - just trigger the HTML save
+      // No need to save annotations to JSON - just trigger the table save
       if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
         const correctedHtml = tableEditor.current.generateCorrectedHtml();
         if (correctedHtml) {
-          await updateHtml(currentFileId, correctedHtml);
+          handleTableChange(correctedHtml);
         }
       }
     } catch (error) {
@@ -279,34 +331,37 @@ function App() {
     }
   };
 
-  // Update handleExportHtml to save directly back to the original file
-  const handleExportHtml = async (htmlContent) => {
+  // Update handleExportText to save directly back to the original file
+  const handleExportText = async (textContent) => {
     if (!currentFileId) return;
     
     try {
       // Get the current file's details
       const fileDetails = await getFileDetails(currentFileId);
       if (!fileDetails.success || !fileDetails.file) {
-        console.error('Could not get file details for HTML export');
+        console.error('Could not get file details for text export');
         return;
       }
       
-      // Check if this file has an HTML file
-      if (fileDetails.file.hasHtml) {
-        // Update the original HTML file
-        const result = await updateHtml(currentFileId, htmlContent);
+      // Check if this file has a text file
+      if (fileDetails.file.hasTxt) {
+        // Update the original text file
+        const result = await updateParsedText(currentFileId, {
+          outside_text: textContent,
+          tables: tables
+        });
         if (!result.success) {
-          console.error(`Error updating HTML: ${result.error || 'Unknown error'}`);
+          console.error(`Error updating text: ${result.error || 'Unknown error'}`);
         }
       } else {
-        // If no original HTML, create a new one with exportHtml
-        const result = await exportHtml(currentFileId, htmlContent);
+        // If no original text, create a new one with exportText
+        const result = await exportText(currentFileId, textContent);
         if (!result.success) {
-          console.error(`Error exporting HTML: ${result.error || 'Unknown error'}`);
+          console.error(`Error exporting text: ${result.error || 'Unknown error'}`);
         }
       }
     } catch (error) {
-      console.error('Error handling HTML export:', error);
+      console.error('Error handling text export:', error);
     }
   };
 
@@ -321,7 +376,7 @@ function App() {
     }
   };
 
-  // Update handleBackToFiles to auto-save before returning to file list
+  // Update handleBackToFiles to pass current page
   const handleBackToFiles = async () => {
     // Auto-save before navigating away
     if (autoSave && currentFileId) {
@@ -331,27 +386,31 @@ function App() {
     setCurrentFile(null);
     setCurrentFileId(null);
     setCurrentImage(null);
-    setTableHtml(null);
+    setOutsideText('');
+    setTables([]);
     setCurrentAnnotations([]);
   };
 
   // Add a dedicated auto-save function
-  const saveCurrentHtml = async () => {
-    if (!currentFileId || !tableHtml) return false;
+  const saveCurrentText = async () => {
+    if (!currentFileId || !outsideText || !tables.length) return false;
     
     try {
-      // Get the current corrected HTML
+      // Get the current corrected text
       if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
         const correctedHtml = tableEditor.current.generateCorrectedHtml();
         if (correctedHtml) {
-          // Save the HTML
-          const result = await updateHtml(currentFileId, correctedHtml);
+          // Save the text
+          const result = await updateParsedText(currentFileId, {
+            outside_text: outsideText,
+            tables: tables
+          });
           return result.success;
         }
       }
       return false;
     } catch (error) {
-      console.error('Error saving HTML:', error);
+      console.error('Error saving text:', error);
       return false;
     }
   };
@@ -369,7 +428,7 @@ function App() {
           if (autoSave) {
             setIsLoading(true);
             setLoadingStatus('Saving changes...');
-            await saveCurrentHtml();
+            await saveCurrentText();
           }
           handlePrevFile();
           break;
@@ -378,7 +437,7 @@ function App() {
           if (autoSave) {
             setIsLoading(true);
             setLoadingStatus('Saving changes...');
-            await saveCurrentHtml();
+            await saveCurrentText();
           }
           handleNextFile();
           break;
@@ -396,9 +455,9 @@ function App() {
   // Add a beforeunload handler to save changes when closing the browser
   useEffect(() => {
     const handleBeforeUnload = async (e) => {
-      if (autoSave && currentFileId && tableHtml) {
+      if (autoSave && currentFileId && tables.length > 0) {
         // Attempt to save changes
-        await saveCurrentHtml();
+        await saveCurrentText();
       }
     };
     
@@ -406,7 +465,7 @@ function App() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [currentFileId, tableHtml, autoSave]);
+  }, [currentFileId, tables.length, autoSave]);
 
   // Handle excluding (removing) the current file
   const handleOpenExcludeDialog = () => {
@@ -429,7 +488,7 @@ function App() {
       let nextFileId = null;
       
       try {
-        const filesList = await getTableFiles(1, 1000);
+        const filesList = await getTableFiles(1, 10000);
         if (filesList.success && filesList.files && filesList.files.length > 0) {
           const currentIndex = filesList.files.findIndex(f => f.id === currentFileId);
           if (currentIndex >= 0) {
@@ -464,7 +523,8 @@ function App() {
           setCurrentFile(null);
           setCurrentFileId(null);
           setCurrentImage(null);
-          setTableHtml(null);
+          setOutsideText('');
+          setTables([]);
           setCurrentAnnotations([]);
         }
       } else {
@@ -477,221 +537,223 @@ function App() {
     }
   };
 
+  // Add manual save function
+  const handleManualSave = async () => {
+    try {
+      if (!currentFileId) return;
+      
+      setIsLoading(true);
+      setLoadingStatus('Saving file...');
+
+      // Make sure we get the latest table content
+      let finalTables = [...tables];
+      if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
+        const correctedHtml = tableEditor.current.generateCorrectedHtml();
+        if (correctedHtml) {
+          finalTables[currentTableIndex] = correctedHtml;
+        }
+      }
+
+      // Send the current text and all tables to be saved
+      const result = await updateParsedText(currentFileId, {
+        outside_text: outsideText,
+        tables: finalTables
+      });
+
+      if (!result.success) {
+        if (result.error && result.error.includes('modified externally')) {
+          toast.warning('File was modified externally. Reloading latest version...');
+          await loadFile(currentFileId);
+        } else {
+          toast.error(`Error saving: ${result.error}`);
+        }
+      } else {
+        toast.success('File saved successfully');
+      }
+    } catch (error) {
+      console.error('Error saving file:', error);
+      toast.error('Error saving file');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
-      <AppBar position="static">
-        <Toolbar variant="dense">
-          <Typography variant="h6" sx={{ flexGrow: 1, fontSize: '1.1rem' }}>
-            Table HTML Editor
-          </Typography>
-          
-          {currentFile ? (
-            <Button
-              color="inherit"
-              startIcon={<ArrowBackIcon />}
-              onClick={handleBackToFiles}
-              size="small"
-            >
-              Back
-            </Button>
-          ) : null}
-        </Toolbar>
-      </AppBar>
-      
-      <Box sx={{ 
-        width: '100%',
-        px: 1, // Just 8px padding on left and right
-        py: 0.5, // Minimal top/bottom padding
-        boxSizing: 'border-box'
-      }}>
-        {!serverConnected ? (
-          <Paper elevation={3} sx={{ p: 3, mt: 4, textAlign: 'center' }}>
-            <Typography variant="h5" color="error" gutterBottom>
-              Cannot Connect to Server
-            </Typography>
-            <Typography variant="body1" paragraph>
-              The application cannot connect to the Python server. Please make sure:
-            </Typography>
-            <Typography variant="body2" sx={{ textAlign: 'left', maxWidth: '500px', mx: 'auto' }}>
-              1. The Python server is running on http://localhost:5000
-              2. You have installed all the required Python dependencies
-              3. The server has correct permissions to access the images directory
-              4. There are no network issues or firewall restrictions
-            </Typography>
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={checkServerStatus}
-              sx={{ mt: 2 }}
-            >
-              Retry Connection
-            </Button>
-          </Paper>
-        ) : !currentFile ? (
-          <Box sx={{ my: 4 }}>
-            <FileBrowser onFileSelected={handleFileSelected} />
-            
-            {serverStatus && (
-              <Paper elevation={1} sx={{ p: 2, mt: 2 }}>
-                <Typography variant="body2" color="textSecondary">
-                  Server Status: Running | 
-                  Images Directory: {serverStatus.imagesDirectory} | 
-                  Files Available: {serverStatus.fileCount}
-                </Typography>
-              </Paper>
-            )}
-          </Box>
-        ) : (
-          <Box sx={{ my: 4 }}>
-            <Paper elevation={3} sx={{ p: { xs: 1, sm: 2 } }}>
-              <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                mb: 1,
-                pb: 1,
-                borderBottom: '1px solid #eaeaea'
-              }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontSize: '1.1rem' }}>
-                    {currentFile.name}
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary" sx={{ fontSize: '0.8rem' }}>
-                    {currentFile.hasHtml ? 'HTML Available' : 'No HTML File'} 
-                  </Typography>
-                </Box>
-                
-                <Box>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
+          {!currentFile ? (
+            <FileBrowser 
+              onFileSelected={handleFileSelected} 
+              initialPage={lastPageNumber}
+            />
+          ) : (
+            <Box sx={{ width: '100%', height: '100%', p: 2 }}>
+              {/* File Navigation */}
+              <Paper sx={{ mb: 2, p: 1 }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="h6">
+                      {currentFile.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+                      (File {currentFile.pagination?.fileIndex} of {currentFile.pagination?.totalFiles}, 
+                      Page {currentFile.pagination?.currentPage})
+                    </Typography>
+                  </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<ArrowBackIcon />}
+                      onClick={handleBackToFiles}
+                    >
+                      Back to Files
+                    </Button>
                     <Button
                       variant="outlined"
                       startIcon={<NavigateBeforeIcon />}
                       onClick={handlePrevFile}
                       disabled={isLoading}
-                      size="small"
                     >
                       Previous
                     </Button>
-                    
                     <Button
                       variant="outlined"
                       endIcon={<NavigateNextIcon />}
                       onClick={handleNextFile}
                       disabled={isLoading}
-                      size="small"
                     >
                       Next
                     </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleManualSave}
+                      disabled={isLoading}
+                    >
+                      Save File
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={handleOpenExcludeDialog}
+                    >
+                      Exclude
+                    </Button>
                   </Box>
-                  
-                  <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, fontSize: '0.75rem', textAlign: 'right' }}>
-                    Keyboard: ← Previous | → Next
-                  </Typography>
                 </Box>
-              </Box>
+              </Paper>
 
-              {isLoading ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', my: 8 }}>
-                  <CircularProgress />
-                  <Typography variant="body1" sx={{ mt: 2 }}>
-                    {loadingStatus || 'Loading...'}
-                  </Typography>
-                </Box>
-              ) : (
-                <Box>
-                  {currentImage && tableHtml ? (
-                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
-                      {/* Left side - Image panel */}
-                      <Box sx={{ 
-                        width: { xs: '100%', md: '40%' }, 
-                        position: { md: 'sticky' },
-                        top: { md: '8px' },
-                        alignSelf: { md: 'flex-start' }
-                      }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                          <Typography variant="caption" sx={{ pl: 1 }}>
-                            Table Image:
+              {/* Main Content */}
+              <Grid container spacing={2} sx={{ height: 'calc(100% - 80px)' }}>
+                {/* Left side - Image */}
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ height: '100%', overflow: 'hidden' }}>
+                    {currentImage && (
+                      <ZoomableImage src={currentImage} alt="Current image" />
+                    )}
+                  </Paper>
+                </Grid>
+
+                {/* Right side - Text and Table editors */}
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ 
+                    height: '100%', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: 2 
+                  }}>
+                    {/* Text Editor */}
+                    <Paper sx={{ flex: 0.67, overflow: 'hidden' }}>
+                      <TextEditor 
+                        text={outsideText}
+                        onTextChange={handleTextChange}
+                      />
+                    </Paper>
+
+                    {/* Table Editor */}
+                    <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      {tables.length > 0 ? (
+                        <>
+                          <TableNavigator
+                            currentTable={currentTableIndex}
+                            totalTables={tables.length}
+                            onNavigate={handleTableNavigation}
+                          />
+                          <Box sx={{ flex: 1, overflow: 'auto' }}>
+                            <TableEditor
+                              ref={tableEditor}
+                              tableHtml={tables[currentTableIndex]}
+                              onAnnotationSaved={handleAnnotationSaved}
+                              existingAnnotations={currentAnnotations}
+                              onExportHtml={handleTableChange}
+                              autoSave={autoSave}
+                              onEditingStateChange={setIsEditing}
+                              hideInstructions={true}
+                            />
+                          </Box>
+                        </>
+                      ) : (
+                        <Box sx={{ p: 2, textAlign: 'center' }}>
+                          <Typography color="textSecondary">
+                            No tables found in the text
                           </Typography>
-                          
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            startIcon={<DeleteIcon />}
-                            onClick={handleOpenExcludeDialog}
-                            size="small"
-                            sx={{ 
-                              minWidth: 'auto', 
-                              py: 0.5, 
-                              fontSize: '0.75rem', 
-                              height: 'fit-content'
-                            }}
-                          >
-                            Remove
-                          </Button>
                         </Box>
-                        <ZoomableImage 
-                          src={currentImage} 
-                          alt="Table" 
-                        />
-                      </Box>
+                      )}
+                    </Paper>
+                  </Box>
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+        </Box>
 
-                      {/* Right side - HTML editor */}
-                      <Box sx={{ 
-                        width: { xs: '100%', md: '55%' },
-                        display: { 
-                          xs: (mobileView === 'editor' || mobileView === 'both') ? 'block' : 'none',
-                          md: 'block'
-                        }
-                      }}>
-                        <TableEditor
-                          ref={tableEditor}
-                          tableHtml={tableHtml}
-                          onAnnotationSaved={handleAnnotationSaved}
-                          existingAnnotations={currentAnnotations}
-                          onExportHtml={handleExportHtml}
-                          autoSave={autoSave}
-                          onEditingStateChange={setIsEditing}
-                        />
-                      </Box>
-                    </Box>
-                  ) : (
-                    <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
-                      {currentImage ? 'No HTML content available for this image.' : 
-                        'No image available. Select a file from the browser.'}
-                    </Typography>
-                  )}
-                </Box>
-              )}
-            </Paper>
+        {/* Loading overlay */}
+        {isLoading && (
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 9999,
+            }}
+          >
+            <CircularProgress color="primary" />
+            <Typography sx={{ mt: 2, color: 'white' }}>{loadingStatus}</Typography>
           </Box>
         )}
+
+        {/* Exclude confirmation dialog */}
+        <Dialog
+          open={confirmExcludeOpen}
+          onClose={handleCloseExcludeDialog}
+        >
+          <DialogTitle>Confirm Exclude</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Are you sure you want to exclude this file? This will move the image and its associated files to the excluded directory.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseExcludeDialog}>Cancel</Button>
+            <Button onClick={handleExcludeFile} color="error" startIcon={<DeleteIcon />}>
+              Exclude
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
-      
-      {/* Confirmation Dialog for Excluding a File */}
-      <Dialog
-        open={confirmExcludeOpen}
-        onClose={handleCloseExcludeDialog}
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
-      >
-        <DialogTitle id="alert-dialog-title">
-          {"Remove this file?"}
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText id="alert-dialog-description">
-            This will move the image file and its corresponding HTML file to the excluded directory.
-            This action cannot be undone from the application.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseExcludeDialog} color="primary">
-            Cancel
-          </Button>
-          <Button onClick={handleExcludeFile} color="error" autoFocus>
-            Remove
-          </Button>
-        </DialogActions>
-      </Dialog>
     </ThemeProvider>
   );
 }

@@ -1,120 +1,150 @@
 # Table Annotation Tool
 
-A web application for annotating and correcting OCR errors in table structures extracted from images. This tool works with HTML tables generated from a table2html model, allowing you to view images alongside the extracted HTML and make corrections to cell contents.
+A web-based annotation tool for Image2Text tasks that handles both regular text and HTML tables. This tool allows users to view images alongside their corresponding text content, edit text, and annotate tables in a user-friendly interface.
 
 ## Features
 
-- Browse and edit table images and their HTML representations
-- Side-by-side view of original image and HTML table
-- Auto-save corrections when navigating between files
-- Keyboard shortcuts for navigation (left/right arrow keys)
-- Export corrected HTML
+- **Dual View Interface**
+  - Image viewer on the left
+  - Text editor on top right
+  - Table editor on bottom right
 
-## Usage Tips
+- **Text Handling**
+  - View and edit text content
+  - Automatic table detection and parsing
+  - Support for multiple tables per file
+  - Auto-saving functionality
 
-- Make sure your images and corresponding HTML files have matching filenames, and in the same folder
-- Edit any cell by clicking on it and pressing Enter to save changes
-- Use keyboard arrow keys (← and →) to navigate between images
-- The app is always in auto-save mode (switching to next/previous image will auto save annotation for current image)
+- **Table Editing**
+  - Interactive table cell editing
+  - Table navigation for files with multiple tables
+  - Cell-level annotation support
+  - HTML table structure preservation
 
-## Running the Application with Docker (Recommended)
+- **File Management**
+  - Browse and navigate through files
+  - Pagination support
+  - File exclusion capability
+  - External file modification detection
 
-Note: You must have **docker** and **docker-compose** installed on your machine
+- **User Interface**
+  - Clean, modern Material-UI design
+  - Responsive layout
+  - Progress indicators for operations
+  - Error notifications
 
-### Linux/macOS Users
+## Prerequisites
 
-1. **Using Pre-built Docker Images** (Recommended):
+- Node.js (v14 or higher)
+- Python (v3.8 or higher)
+- pip (Python package installer)
+
+## Installation
+
+### Backend Setup
+
+1. Install Python dependencies:
    ```bash
-   # Pull pre-built images
-   docker pull fioresxcat/table2html-annotation:frontend
-   docker pull fioresxcat/table2html-annotation:backend
-   
-   # Setup using helper script
-   ./use_docker_hub_images.sh
-   
-   # Run the application (after images are pulled)
-   ./run.sh --no-build
+   pip install flask flask-cors
    ```
 
-2. **Building Images Locally** (If pre-built images don't work):
+### Frontend Setup
+
+1. Navigate to the frontend directory:
    ```bash
-   # Clone the repository
-   git clone https://github.com/fioresxcat/table2html-annotation.git
-   cd table2html-annotation
-   
-   # Run the application (this will build images locally)
-   ./run.sh
+   cd table-annotation-app
    ```
 
-### Windows Users
-
-Commands should be run in **Windows Terminal** or **Windows Powershell**
-
-1. **Using Pre-built Docker Images** (Recommended):
-   ```cmd
-   :: Pull pre-built images
-   docker pull fioresxcat/table2html-annotation:frontend
-   docker pull fioresxcat/table2html-annotation:backend
-   
-   :: Setup using helper script
-   use_docker_hub_images.bat
-   
-   :: Run the application (after images are pulled)
-   run.bat --no-build
+2. Install Node.js dependencies:
+   ```bash
+   npm install
    ```
 
-2. **Building Images Locally** (If pre-built images don't work):
-   ```cmd
-   :: Clone the repository
-   git clone https://github.com/fioresxcat/table2html-annotation.git
-   cd table2html-annotation
-   
-   :: Run the application (this will build images locally)
-   run.bat
+## Configuration
+
+1. Set up the images directory:
+   - Create a directory for your images and text files
+   - The directory should contain:
+     - Image files (.jpg, .jpeg, .png)
+     - Corresponding text files with the same base name (.txt)
+
+
+## Running the Application
+
+1. Start the backend server:
+   ```bash
+   cd file_server
+   python run.py --images-dir /path/to/your/images [--port 5000]
    ```
+   The server will start on http://localhost:5000 (or the specified port)
+   
+   Arguments:
+   - `--images-dir`: Path to your images directory (required)
+   - `--port`: Port number to run the server on (optional, default: 5000)
 
-When using the application with Docker:
-- You'll be prompted to enter the path to your images directory
-- The application will be available at http://localhost
-- Use the `--detach` or `-d` flag to run in the background
-- Use the `--help` flag to see all available options
+2. In a new terminal, start the frontend development server:
+   ```bash
+   cd table-annotation-app
+   npm start
+   ```
+   The application will open in your default browser at http://localhost:3000
 
-## Manual Setup (Without Docker)
+## Usage
 
-If you prefer not to use Docker, you can set up the application manually:
+1. **File Browser**
+   - Browse through available files
+   - Click on a file to open it in the editor
+   - Use pagination to navigate through files
+   - Click "Refresh" to update the file list
 
-### 1. Backend Setup
+2. **Image Viewing**
+   - View the current image on the left side
+   - Zoom and pan functionality available
 
-```bash
-# Navigate to the backend directory
-cd file_server
+3. **Text Editing**
+   - Edit text content in the top right editor
+   - Changes are auto-saved
+   - Tables are marked with <TABLE></TABLE> tags
 
-# Install dependencies
-pip install -r requirements.txt
+4. **Table Editing**
+   - Click on table cells to edit content
+   - Navigate between multiple tables using the table navigator
+   - Changes are auto-saved
 
-# Start the server
-python run.py --images-dir /path/to/your/images
-```
+5. **File Navigation**
+   - Use "Previous" and "Next" buttons to navigate between files
+   - Click "Back to Files" to return to the file browser
+   - Use "Exclude" to move files to the excluded directory
 
-### 2. Frontend Setup
+## File Format
 
-```bash
-# Navigate to the frontend directory
-cd table-annotation-app
+The application expects:
+- Image files in common formats (jpg, jpeg, png)
+- Text files (.txt) containing:
+  - Regular text
+  - HTML tables marked with <table> tags
+  - The application will automatically parse and separate tables from text
 
-# Install dependencies
-npm install
+## Notes
 
-# Start the development server
-npm start
-```
+- Auto-save is enabled by default
+- External file modifications are detected
+- The excluded files are moved to a subdirectory named 'excluded' in your images directory
+- The application maintains file order and pagination state when navigating
 
-The application will be available at http://localhost:3000
+## Troubleshooting
 
+1. If the backend fails to start:
+   - Check if the IMAGES_DIR environment variable is set correctly
+   - Ensure the Python virtual environment is activated
+   - Verify port 5000 is not in use
 
-## Handling Large Datasets
+2. If the frontend fails to connect:
+   - Verify the backend is running
+   - Check the REACT_APP_API_BASE_URL in .env
+   - Ensure there are no CORS issues
 
-This application is optimized to handle thousands of images through:
-- Server-side pagination
-- Efficient file indexing
-- Loading only what's needed, when needed 
+3. If files are not displaying:
+   - Verify the images directory contains valid files
+   - Check file permissions
+   - Ensure file names match between images and text files 

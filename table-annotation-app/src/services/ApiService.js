@@ -19,11 +19,11 @@ const apiClient = axios.create({
  */
 export const getTableFiles = async (page = 1, limit = 50) => {
   try {
-    const response = await apiClient.get(`/files?page=${page}&limit=${limit}`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files?page=${page}&limit=${limit}`);
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching table files:', error);
-    throw error;
+    console.error('Error fetching files:', error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -34,11 +34,11 @@ export const getTableFiles = async (page = 1, limit = 50) => {
  */
 export const getFileDetails = async (fileId) => {
   try {
-    const response = await apiClient.get(`/files/${fileId}`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}?page_size=50`);
+    return await response.json();
   } catch (error) {
     console.error('Error fetching file details:', error);
-    throw error;
+    return { success: false, error: error.message };
   }
 };
 
@@ -58,26 +58,26 @@ export const getImageUrl = (fileId) => {
  */
 export const getImageBase64 = async (fileId) => {
   try {
-    const response = await apiClient.get(`/files/${fileId}/base64image`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/base64image`);
+    return await response.json();
   } catch (error) {
     console.error('Error fetching base64 image:', error);
-    throw error;
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * Get HTML content for a file
+ * Get parsed text content
  * @param {string} fileId - The ID of the file
  * @returns {Promise} - Promise with the API response
  */
-export const getHtmlContent = async (fileId) => {
+export const getParsedText = async (fileId) => {
   try {
-    const response = await apiClient.get(`/files/${fileId}/html`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/parsed-txt`);
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching HTML content:', error);
-    throw error;
+    console.error('Error fetching parsed text:', error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -88,11 +88,11 @@ export const getHtmlContent = async (fileId) => {
  */
 export const getAnnotations = async (fileId) => {
   try {
-    const response = await apiClient.get(`/files/${fileId}/annotations`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/annotations`);
+    return await response.json();
   } catch (error) {
     console.error('Error fetching annotations:', error);
-    throw error;
+    return { success: false, error: error.message };
   }
 };
 
@@ -104,66 +104,78 @@ export const getAnnotations = async (fileId) => {
  */
 export const saveAnnotations = async (fileId, annotations) => {
   try {
-    const response = await apiClient.post(`/files/${fileId}/annotations`, annotations);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/annotations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ annotations }),
+    });
+    return await response.json();
   } catch (error) {
     console.error('Error saving annotations:', error);
-    throw error;
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * Export corrected HTML
+ * Export text
  * @param {string} fileId - The ID of the file
- * @param {string} html - The corrected HTML content
+ * @param {string} textContent - The text content to export
  * @returns {Promise} - Promise with the API response
  */
-export const exportHtml = async (fileId, html) => {
+export const exportText = async (fileId, textContent) => {
   try {
-    const response = await apiClient.post(`/files/${fileId}/export-html`, { html });
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/export-txt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: textContent }),
+    });
+    return await response.json();
   } catch (error) {
-    console.error('Error exporting HTML:', error);
-    throw error;
+    console.error('Error exporting text:', error);
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * Update the original HTML file
+ * Update the parsed text file
  * @param {string} fileId - The ID of the file
- * @param {string} html - The corrected HTML content
+ * @param {string} content - The updated text content
  * @returns {Promise} - Promise with the API response
  */
-export const updateHtml = async (fileId, html) => {
+export const updateParsedText = async (fileId, content) => {
   try {
-    const response = await apiClient.post(`/files/${fileId}/update-html`, { html });
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/update-parsed-txt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(content),
+    });
+    return await response.json();
   } catch (error) {
-    console.error('Error updating HTML file:', error);
-    // Return a standardized error response
-    return {
-      success: false,
-      error: error.message || 'Unknown error updating HTML'
-    };
+    console.error('Error updating text:', error);
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * Exclude a file by moving it and its HTML to the excluded directory
+ * Exclude a file by moving it and its text to the excluded directory
  * @param {string} fileId - The ID of the file
  * @returns {Promise} - Promise with the API response
  */
 export const excludeFile = async (fileId) => {
   try {
-    const response = await apiClient.post(`/files/${fileId}/exclude`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/files/${fileId}/exclude`, {
+      method: 'POST',
+    });
+    return await response.json();
   } catch (error) {
     console.error('Error excluding file:', error);
-    // Return a standardized error response
-    return {
-      success: false,
-      error: error.message || 'Unknown error excluding file'
-    };
+    return { success: false, error: error.message };
   }
 };
 
@@ -171,8 +183,14 @@ export const excludeFile = async (fileId) => {
  * Download all annotations export
  * This opens a download in the browser
  */
-export const downloadAllAnnotations = () => {
-  window.open(`${API_BASE_URL}/export-all-annotations`, '_blank');
+export const downloadAllAnnotations = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/export-all-annotations`);
+    return await response.json();
+  } catch (error) {
+    console.error('Error downloading all annotations:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 /**
@@ -181,11 +199,11 @@ export const downloadAllAnnotations = () => {
  */
 export const getServerStatus = async () => {
   try {
-    const response = await apiClient.get('/status');
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/status`);
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching server status:', error);
-    throw error;
+    console.error('Error getting server status:', error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -194,11 +212,11 @@ export default {
   getFileDetails,
   getImageUrl,
   getImageBase64,
-  getHtmlContent,
+  getParsedText,
   getAnnotations,
   saveAnnotations,
-  exportHtml,
-  updateHtml,
+  exportText,
+  updateParsedText,
   excludeFile,
   downloadAllAnnotations,
   getServerStatus
