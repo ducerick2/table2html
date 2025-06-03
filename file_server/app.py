@@ -3,6 +3,7 @@ import os
 import json
 import base64
 import shutil
+import re
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -20,7 +21,40 @@ PORT = int(os.environ.get('PORT', 5000))
 # File index cache
 file_index = None
 index_last_updated = 0
-INDEX_CACHE_DURATION = 300  # seconds (5 minutes)
+INDEX_CACHE_DURATION = 120  # seconds
+
+def parse_tables_from_text(text):
+    """
+    Parse text content and extract tables, replacing them with <TABLE></TABLE> markers
+    Returns:
+    - outside_text: Text with tables replaced by markers
+    - tables: List of table HTML strings
+    """
+    # Regular expression to find table tags and their content
+    table_pattern = re.compile(r'<table[^>]*>.*?</table>', re.DOTALL | re.IGNORECASE)
+    
+    # Find all tables
+    tables = table_pattern.findall(text)
+    
+    # Replace each table with a marker
+    outside_text = text
+    for table in tables:
+        outside_text = outside_text.replace(table, '<TABLE></TABLE>')
+    
+    return {
+        'outside_text': outside_text,
+        'tables': tables
+    }
+
+def read_text_file(file_path):
+    """Read and parse a text file containing tables"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return parse_tables_from_text(content)
+    except Exception as e:
+        print(f"Error reading text file: {str(e)}")
+        return None
 
 # Create the excluded directory if it doesn't exist
 def ensure_excluded_dir():
@@ -28,11 +62,27 @@ def ensure_excluded_dir():
         os.makedirs(EXCLUDED_DIR, exist_ok=True)
         print(f"Created excluded directory: {EXCLUDED_DIR}")
 
+def get_file_content(file_path):
+    """Read current content directly from disk"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        print(f"Error reading file {file_path}: {str(e)}")
+        return None
+
+def get_parsed_content(file_path):
+    """Read and parse current content from disk"""
+    content = get_file_content(file_path)
+    if content is not None:
+        return parse_tables_from_text(content)
+    return None
+
 def build_file_index():
     """Build or refresh the file index"""
     global file_index, index_last_updated
     
-    # Only rebuild if it's been more than 5 minutes since last update
+    # Only rebuild if it's been more than 30 seconds since last update
     now = time.time()
     if file_index is not None and (now - index_last_updated < INDEX_CACHE_DURATION):
         return file_index
@@ -58,8 +108,8 @@ def build_file_index():
             
         # Get base name without extension
         base_name = os.path.splitext(filename)[0]
-        html_file = f"{base_name}.html"
-        html_path = os.path.join(IMAGES_DIR, html_file)
+        txt_file = f"{base_name}.txt"
+        txt_path = os.path.join(IMAGES_DIR, txt_file)
         
         annotation_file = f"{base_name}_annotations.json"
         annotation_path = os.path.join(IMAGES_DIR, annotation_file)
@@ -71,8 +121,8 @@ def build_file_index():
             "id": base_name,
             "name": filename,
             "path": file_path,
-            "htmlPath": html_path if os.path.exists(html_path) else None,
-            "hasHtml": os.path.exists(html_path),
+            "txtPath": txt_path if os.path.exists(txt_path) else None,
+            "hasTxt": os.path.exists(txt_path),
             "annotationPath": annotation_path if os.path.exists(annotation_path) else None,
             "hasAnnotation": os.path.exists(annotation_path),
             "size": stats.st_size,
@@ -115,7 +165,7 @@ def list_files():
         files_data = [{
             "id": file["id"],
             "name": file["name"],
-            "hasHtml": file["hasHtml"],
+            "hasTxt": file["hasTxt"],
             "hasAnnotation": file["hasAnnotation"],
             "lastModified": file["lastModified"]
         } for file in paginated_files]
@@ -143,10 +193,27 @@ def get_file_details(file_id):
         if not file_info:
             return jsonify({"error": "File not found"}), 404
         
-        return jsonify({
+        # Calculate pagination info
+        total_files = len(index)
+        file_index = next(i for i, f in enumerate(index) if f["id"] == file_id)
+        page_size = int(request.args.get('page_size', 50))  # Default page size
+        current_page = (file_index // page_size) + 1
+        file_index_in_page = file_index % page_size
+        
+        # Add pagination info to response
+        response = {
             "success": True,
-            "file": file_info
-        })
+            "file": file_info,
+            "pagination": {
+                "totalFiles": total_files,
+                "currentPage": current_page,
+                "pageSize": page_size,
+                "fileIndex": file_index + 1,  # 1-based index for display
+                "fileIndexInPage": file_index_in_page + 1,  # 1-based index for display
+            }
+        }
+        
+        return jsonify(response)
     except Exception as e:
         print(f"Error getting file details: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -198,27 +265,27 @@ def get_base64_image(file_id):
         print(f"Error serving base64 image: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/files/<file_id>/html', methods=['GET'])
-def get_html(file_id):
-    """Get HTML content"""
+@app.route('/api/files/<file_id>/txt', methods=['GET'])
+def get_txt(file_id):
+    """Get text content"""
     try:
         index = build_file_index()
         
         # Find file in index
         file_info = next((file for file in index if file["id"] == file_id), None)
-        if not file_info or not file_info["hasHtml"]:
-            return jsonify({"error": "HTML file not found"}), 404
+        if not file_info or not file_info["hasTxt"]:
+            return jsonify({"error": "Text file not found"}), 404
         
-        # Read HTML file
-        with open(file_info["htmlPath"], 'r', encoding='utf-8') as html_file:
-            html_content = html_file.read()
+        # Read text file
+        with open(file_info["txtPath"], 'r', encoding='utf-8') as txt_file:
+            txt_content = txt_file.read()
         
         return jsonify({
             "success": True,
-            "html": html_content
+            "text": txt_content
         })
     except Exception as e:
-        print(f"Error serving HTML: {str(e)}")
+        print(f"Error serving text: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/files/<file_id>/annotations', methods=['GET'])
@@ -288,9 +355,9 @@ def save_annotations(file_id):
         print(f"Error saving annotations: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/files/<file_id>/export-html', methods=['POST'])
-def export_html(file_id):
-    """Export corrected HTML"""
+@app.route('/api/files/<file_id>/export-txt', methods=['POST'])
+def export_txt(file_id):
+    """Export corrected text"""
     try:
         index = build_file_index()
         
@@ -299,25 +366,25 @@ def export_html(file_id):
         if not file_info:
             return jsonify({"error": "File not found"}), 404
         
-        # Get HTML content from request
-        html_content = request.json.get("html")
-        if not html_content:
-            return jsonify({"error": "No HTML content provided"}), 400
+        # Get text content from request
+        txt_content = request.json.get("text")
+        if not txt_content:
+            return jsonify({"error": "No text content provided"}), 400
         
         # Set the export path
-        export_path = os.path.join(IMAGES_DIR, f"{file_id}_corrected.html")
+        export_path = os.path.join(IMAGES_DIR, f"{file_id}_corrected.txt")
         
-        # Save HTML to file
-        with open(export_path, 'w', encoding='utf-8') as html_file:
-            html_file.write(html_content)
+        # Save text to file
+        with open(export_path, 'w', encoding='utf-8') as txt_file:
+            txt_file.write(txt_content)
         
         return jsonify({
             "success": True,
-            "message": "HTML exported successfully",
+            "message": "Text exported successfully",
             "path": export_path
         })
     except Exception as e:
-        print(f"Error exporting HTML: {str(e)}")
+        print(f"Error exporting text: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/export-all-annotations', methods=['GET'])
@@ -378,9 +445,9 @@ def get_status():
     })
 
 # The only endpoint we really need for HTML editing is:
-@app.route('/api/files/<file_id>/update-html', methods=['POST'])
-def update_html(file_id):
-    """Update the original HTML file"""
+@app.route('/api/files/<file_id>/update-txt', methods=['POST'])
+def update_txt(file_id):
+    """Update the original text file"""
     try:
         index = build_file_index()
         
@@ -389,38 +456,38 @@ def update_html(file_id):
         if not file_info:
             return jsonify({"error": "File not found"}), 404
         
-        # Get HTML content from request
-        html_content = request.json.get("html")
-        if not html_content:
-            return jsonify({"error": "No HTML content provided"}), 400
+        # Get text content from request
+        txt_content = request.json.get("text")
+        if not txt_content:
+            return jsonify({"error": "No text content provided"}), 400
         
-        # Check if HTML file exists
-        html_path = file_info.get("htmlPath")
-        if not html_path:
-            # Create a new HTML file if it doesn't exist
+        # Check if text file exists
+        txt_path = file_info.get("txtPath")
+        if not txt_path:
+            # Create a new text file if it doesn't exist
             base_name = file_id
-            html_path = os.path.join(IMAGES_DIR, f"{base_name}.html")
+            txt_path = os.path.join(IMAGES_DIR, f"{base_name}.txt")
         
-        # Save HTML to the file
-        with open(html_path, 'w', encoding='utf-8') as html_file:
-            html_file.write(html_content)
+        # Save text to the file
+        with open(txt_path, 'w', encoding='utf-8') as txt_file:
+            txt_file.write(txt_content)
         
         # Update the file index
-        file_info["hasHtml"] = True
-        file_info["htmlPath"] = html_path
+        file_info["hasTxt"] = True
+        file_info["txtPath"] = txt_path
         
         return jsonify({
             "success": True,
-            "message": "HTML file updated successfully",
-            "path": html_path
+            "message": "Text file updated successfully",
+            "path": txt_path
         })
     except Exception as e:
-        print(f"Error updating HTML file: {str(e)}")
+        print(f"Error updating text file: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/files/<file_id>/exclude', methods=['POST'])
 def exclude_file(file_id):
-    """Move a file and its HTML to the excluded directory"""
+    """Move a file and its text to the excluded directory"""
     try:
         # Make sure the excluded directory exists
         ensure_excluded_dir()
@@ -435,9 +502,9 @@ def exclude_file(file_id):
         image_path = file_info["path"]
         image_filename = os.path.basename(image_path)
         
-        # Get HTML path if it exists
-        html_path = file_info.get("htmlPath")
-        html_filename = os.path.basename(html_path) if html_path else None
+        # Get text path if it exists
+        txt_path = file_info.get("txtPath")
+        txt_filename = os.path.basename(txt_path) if txt_path else None
         
         # Get annotation path if it exists
         annotation_path = file_info.get("annotationPath")
@@ -449,11 +516,11 @@ def exclude_file(file_id):
         
         moved_files = [image_filename]
         
-        # Move HTML file if it exists
-        if html_path and os.path.exists(html_path):
-            excluded_html_path = os.path.join(EXCLUDED_DIR, html_filename)
-            shutil.move(html_path, excluded_html_path)
-            moved_files.append(html_filename)
+        # Move text file if it exists
+        if txt_path and os.path.exists(txt_path):
+            excluded_txt_path = os.path.join(EXCLUDED_DIR, txt_filename)
+            shutil.move(txt_path, excluded_txt_path)
+            moved_files.append(txt_filename)
         
         # Move annotation file if it exists
         if annotation_path and os.path.exists(annotation_path):
@@ -475,6 +542,116 @@ def exclude_file(file_id):
     except Exception as e:
         print(f"Error excluding file: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/files/<file_id>/parsed-txt', methods=['GET'])
+def get_parsed_txt(file_id):
+    """Get parsed text content"""
+    try:
+        # Get latest file info
+        index = build_file_index()
+        
+        # Find file in index
+        file_info = next((file for file in index if file["id"] == file_id), None)
+        if not file_info:
+            return jsonify({"error": "File not found"}), 404
+        
+        # Check if text file exists
+        txt_path = file_info.get("txtPath")
+        if not txt_path or not os.path.exists(txt_path):
+            return jsonify({"error": "Text file not found"}), 404
+        
+        # Read and parse the current content
+        parsed = get_parsed_content(txt_path)
+        if not parsed:
+            return jsonify({"error": "Error parsing text file"}), 500
+        
+        return jsonify({
+            "success": True,
+            "outside_text": parsed["outside_text"],
+            "tables": parsed["tables"]
+        })
+    except Exception as e:
+        print(f"Error getting parsed text: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/files/<file_id>/update-parsed-txt', methods=['POST'])
+def update_parsed_txt(file_id):
+    """Update text file from parsed content"""
+    try:
+        # Get latest file info
+        index = build_file_index()
+        
+        # Find file in index
+        file_info = next((file for file in index if file["id"] == file_id), None)
+        if not file_info:
+            return jsonify({"error": "File not found"}), 404
+        
+        # Get content from request
+        data = request.json
+        outside_text = data.get("outside_text")
+        tables = data.get("tables", [])
+        
+        if outside_text is None:
+            return jsonify({"error": "No outside text provided"}), 400
+        
+        # Check if text file exists or create new one
+        txt_path = file_info.get("txtPath")
+        if not txt_path:
+            base_name = file_id
+            txt_path = os.path.join(IMAGES_DIR, f"{base_name}.txt")
+        
+        # Count the number of table markers in the text
+        marker_count = outside_text.count('<TABLE></TABLE>')
+        
+        # Verify we have the right number of tables
+        if marker_count != len(tables):
+            return jsonify({
+                "success": False,
+                "error": f"Mismatch between number of table markers ({marker_count}) and tables provided ({len(tables)})"
+            }), 400
+        
+        # Reconstruct the full text by inserting tables back in their positions
+        full_text = outside_text
+        for table in tables:
+            # Replace only the first occurrence of the marker
+            # This ensures tables are inserted in the correct order
+            full_text = full_text.replace('<TABLE></TABLE>', table, 1)
+        
+        # Save text to the file
+        with open(txt_path, 'w', encoding='utf-8') as txt_file:
+            txt_file.write(full_text)
+        
+        # Force index refresh to update metadata
+        force_index_refresh()
+        
+        return jsonify({
+            "success": True,
+            "message": "Text file updated successfully",
+            "path": txt_path
+        })
+    except Exception as e:
+        print(f"Error updating text file: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+def get_file_timestamp(file_path):
+    """Get the last modification time of a file"""
+    try:
+        return os.path.getmtime(file_path)
+    except:
+        return 0
+
+def is_file_modified(current_time, last_read_time, tolerance_seconds=1):
+    """
+    Check if a file has been modified, with a tolerance window to account for
+    small timestamp differences
+    """
+    return current_time - last_read_time > tolerance_seconds
+
+def force_index_refresh():
+    """Force a refresh of the file index"""
+    global file_index, index_last_updated
+    file_index = None
+    index_last_updated = 0
 
 if __name__ == '__main__':
     # Initialize mimetypes
