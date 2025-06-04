@@ -7,6 +7,7 @@
     "@emotion/styled": "^11.11.0",
     "@mui/icons-material": "^5.14.11",
     "@mui/material": "^5.14.11",
+    "@tanstack/react-table": "^8.21.3",
     "axios": "^1.5.1",
     "cors": "^2.8.5",
     "express": "^4.18.2",
@@ -47,4 +48,4 @@
   "devDependencies": {
     "concurrently": "^8.2.1"
   }
-} 
+}

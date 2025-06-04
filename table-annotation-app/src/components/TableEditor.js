@@ -1,28 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, Typography, TextField, Button, IconButton, Tooltip, TableContainer, Table, TableBody, TableRow, TableCell, Paper, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
-import SaveIcon from '@mui/icons-material/Save';
-import UndoIcon from '@mui/icons-material/Undo';
-import DownloadIcon from '@mui/icons-material/Download';
-import CodeIcon from '@mui/icons-material/Code';
-import EditIcon from '@mui/icons-material/Edit';
-import clsx from 'clsx';
-import { styled } from '@mui/material/styles';
-
-const CustomDialog = styled(Dialog)(({ theme }) => ({
-  '& .MuiBackdrop-root': {
-    backgroundColor: 'transparent',
-  },
-  '& .MuiDialog-paper': {
-    position: 'absolute',
-    right: 0,
-    top: '20%',
-    margin: 0,
-    width: '45%',
-    maxWidth: '500px',
-    overflow: 'visible',
-    boxShadow: theme.shadows[4],
-  },
-}));
+import React, { useState, useEffect } from 'react';
+import { Box, Typography, TextField, Button, TableContainer, Table, TableBody, TableRow, TableCell, Paper, Dialog, DialogTitle, DialogContent, DialogActions, Menu, MenuItem, Divider } from '@mui/material';
 
 const TableEditor = React.forwardRef(({ 
   tableHtml, 
@@ -37,9 +14,12 @@ const TableEditor = React.forwardRef(({
   const [editingCell, setEditingCell] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [corrections, setCorrections] = useState({});
-  const [hasChanges, setHasChanges] = useState(false);
-  const editInputRef = useRef(null);
+  const [selectedCells, setSelectedCells] = useState([]);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
 
   // Updated parseHtmlTable function to handle colspan and rowspan
   const parseHtmlTable = (tableHtml) => {
@@ -108,12 +88,40 @@ const TableEditor = React.forwardRef(({
     return { rows, originalTable: tableElement };
   };
 
+  // Function to save state to history
+  const saveToHistory = (newState) => {
+    // Remove any future states if we're in the middle of the history
+    const newHistory = history.slice(0, currentHistoryIndex + 1);
+    newHistory.push(JSON.stringify(newState));
+    setHistory(newHistory);
+    setCurrentHistoryIndex(newHistory.length - 1);
+  };
+
+  // Function to handle undo
+  const handleUndo = () => {
+    if (currentHistoryIndex > 0) {
+      const previousState = JSON.parse(history[currentHistoryIndex - 1]);
+      setTableData(previousState);
+      setCurrentHistoryIndex(currentHistoryIndex - 1);
+      
+      // Generate and save HTML from the previous state
+      const correctedHtml = generateFinalHtml();
+      if (onExportHtml) {
+        onExportHtml(correctedHtml);
+      }
+    }
+  };
+
   // Parse the HTML table into a structured format
   useEffect(() => {
     if (!tableHtml) return;
 
     const parsedTable = parseHtmlTable(tableHtml);
     setTableData(parsedTable);
+    // Initialize history with the first state
+    if (history.length === 0) {
+      saveToHistory(parsedTable);
+    }
   }, [tableHtml]);
 
   // Load existing annotations when they change
@@ -138,14 +146,11 @@ const TableEditor = React.forwardRef(({
     if (tableData.rows.length > 0 && Object.keys(corrections).length > 0) {
       const updatedRows = [...tableData.rows];
       
-      // Apply each correction to the table data
       Object.entries(corrections).forEach(([cellId, correction]) => {
-        // Find the cell in the table data
         for (let rowIndex = 0; rowIndex < updatedRows.length; rowIndex++) {
           const cellIndex = updatedRows[rowIndex].findIndex(cell => cell.id === cellId);
           
           if (cellIndex !== -1) {
-            // Update the cell content with the corrected value
             updatedRows[rowIndex][cellIndex] = {
               ...updatedRows[rowIndex][cellIndex],
               text: correction.corrected
@@ -157,14 +162,231 @@ const TableEditor = React.forwardRef(({
       
       setTableData({ ...tableData, rows: updatedRows });
     }
-  }, [tableData.headers, corrections]);
+  }, [tableData, corrections]);
 
-  // Modify handleCellClick to open the dialog
-  const handleCellClick = (rowIndex, cellIndex) => {
-    const cell = tableData.rows[rowIndex][cellIndex];
-    setEditingCell({ rowIndex, cellIndex });
-    setEditValue(cell.text);
-    setDialogOpen(true);
+  // Improved save function to ensure changes are persisted
+  const handleSaveChanges = () => {
+    if (!onExportHtml) return;
+    
+    // Generate new HTML
+    const correctedHtml = generateFinalHtml();
+    
+    // Ensure the save is triggered
+    Promise.resolve().then(() => {
+      onExportHtml(correctedHtml);
+    });
+  };
+
+  // Handle table content change
+  const handleAddRow = (index) => {
+    const updatedRows = [...tableData.rows];
+    const templateRow = updatedRows[index];
+    
+    // Create new row based on the template row
+    const newRow = templateRow.map((cell, colIndex) => ({
+      text: '',
+      isHeader: false,
+      rowspan: 1,
+      colspan: 1,
+      rowIndex: index + 1,
+      colIndex: colIndex,
+      originalCell: null
+    }));
+
+    // Insert the new row after the specified index
+    updatedRows.splice(index + 1, 0, newRow);
+
+    // Update rowIndex for all rows after the insertion
+    for (let i = index + 2; i < updatedRows.length; i++) {
+      updatedRows[i] = updatedRows[i].map(cell => 
+        cell ? { ...cell, rowIndex: i } : null
+      );
+    }
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    handleSaveChanges();
+  };
+
+  // Handle adding column
+  const handleAddColumn = (index) => {
+    const updatedRows = tableData.rows.map((row, rowIndex) => {
+      const newCell = {
+        text: '',
+        isHeader: row[0]?.isHeader || false,
+        rowspan: 1,
+        colspan: 1,
+        rowIndex: rowIndex,
+        colIndex: index + 1,
+        originalCell: null
+      };
+
+      const newRow = [...row];
+      newRow.splice(index + 1, 0, newCell);
+
+      for (let i = index + 2; i < newRow.length; i++) {
+        if (newRow[i]) {
+          newRow[i] = { ...newRow[i], colIndex: i };
+        }
+      }
+
+      return newRow;
+    });
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    handleSaveChanges();
+  };
+
+  // Handle delete column
+  const handleDeleteColumn = (index) => {
+    const updatedRows = JSON.parse(JSON.stringify(tableData.rows));
+    
+    updatedRows.forEach((row, rowIndex) => {
+      row.splice(index, 1);
+      
+      row.forEach((cell, colIndex) => {
+        if (cell) {
+          cell.colIndex = colIndex;
+        }
+      });
+    });
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    
+    const correctedHtml = generateFinalHtml();
+    if (onExportHtml) {
+      onExportHtml(correctedHtml);
+    }
+  };
+
+  // Handle merge cells
+  const handleMergeCells = () => {
+    if (selectedCells.length < 2) return;
+
+    const sortedCells = [...selectedCells].sort((a, b) => {
+      if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+      return a.colIndex - b.colIndex;
+    });
+
+    const firstCell = sortedCells[0];
+    const lastCell = sortedCells[sortedCells.length - 1];
+    const rowspan = lastCell.rowIndex - firstCell.rowIndex + 1;
+    const colspan = lastCell.colIndex - firstCell.colIndex + 1;
+
+    if (selectedCells.length !== rowspan * colspan) {
+      console.error('Invalid cell selection for merge');
+      return;
+    }
+
+    const updatedRows = JSON.parse(JSON.stringify(tableData.rows));
+
+    const mergedText = selectedCells
+      .map(cell => {
+        const cellData = updatedRows[cell.rowIndex][cell.colIndex];
+        return cellData ? cellData.text : '';
+      })
+      .filter(text => text)
+      .join(' ');
+
+    updatedRows[firstCell.rowIndex][firstCell.colIndex] = {
+      ...updatedRows[firstCell.rowIndex][firstCell.colIndex],
+      text: mergedText,
+      rowspan,
+      colspan,
+      originalCell: null
+    };
+
+    for (let i = firstCell.rowIndex; i <= lastCell.rowIndex; i++) {
+      for (let j = firstCell.colIndex; j <= lastCell.colIndex; j++) {
+        if (i !== firstCell.rowIndex || j !== firstCell.colIndex) {
+          updatedRows[i][j] = null;
+        }
+      }
+    }
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    
+    const correctedHtml = generateFinalHtml();
+    if (onExportHtml) {
+      onExportHtml(correctedHtml);
+    }
+
+    setSelectedCells([]);
+  };
+
+  // Handle split cell
+  const handleSplitCell = (rowIndex, colIndex) => {
+    const cell = tableData.rows[rowIndex][colIndex];
+    if (cell.rowspan === 1 && cell.colspan === 1) return;
+
+    const updatedRows = [...tableData.rows];
+    for (let i = 0; i < cell.rowspan; i++) {
+      for (let j = 0; j < cell.colspan; j++) {
+        if (i === 0 && j === 0) {
+          updatedRows[rowIndex][colIndex] = {
+            ...cell,
+            rowspan: 1,
+            colspan: 1
+          };
+        } else {
+          updatedRows[rowIndex + i][colIndex + j] = {
+            text: '',
+            isHeader: cell.isHeader,
+            rowspan: 1,
+            colspan: 1,
+            rowIndex: rowIndex + i,
+            colIndex: colIndex + j,
+            originalCell: null
+          };
+        }
+      }
+    }
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    handleSaveChanges();
+  };
+
+  // Handle cell selection
+  const handleCellClick = (event, rowIndex, colIndex) => {
+    if (event.ctrlKey || event.metaKey) {
+      // Multi-select for merging
+      const cell = { rowIndex, colIndex, text: tableData.rows[rowIndex][colIndex].text };
+      setSelectedCells(prev => {
+        const exists = prev.some(c => c.rowIndex === rowIndex && c.colIndex === colIndex);
+        if (exists) {
+          return prev.filter(c => !(c.rowIndex === rowIndex && c.colIndex === colIndex));
+        }
+        return [...prev, cell];
+      });
+    } else {
+      // Regular cell editing
+      setSelectedCells([]);
+      const cell = tableData.rows[rowIndex][colIndex];
+      setEditingCell({ rowIndex, colIndex });
+      setEditValue(cell.text);
+      setDialogOpen(true);
+    }
+  };
+
+  // Handle context menu
+  const handleContextMenu = (event, rowIndex, colIndex) => {
+    event.preventDefault();
+    setContextMenuPosition({ x: event.clientX, y: event.clientY });
+    setAnchorEl({ rowIndex, colIndex });
+  };
+
+  const handleCloseContextMenu = () => {
+    setContextMenuPosition(null);
+    setAnchorEl(null);
   };
 
   // Add functions to handle dialog close and save
@@ -176,23 +398,18 @@ const TableEditor = React.forwardRef(({
 
   const handleSaveDialog = () => {
     if (editingCell) {
-      const { rowIndex, cellIndex } = editingCell;
+      const { rowIndex, colIndex } = editingCell;
       
-      // Update the text in our data structure
       const updatedRows = [...tableData.rows];
-      if (updatedRows[rowIndex] && updatedRows[rowIndex][cellIndex]) {
-        updatedRows[rowIndex][cellIndex].text = editValue;
-        setTableData({
-          ...tableData,
-          rows: updatedRows
-        });
+      if (updatedRows[rowIndex] && updatedRows[rowIndex][colIndex]) {
+        updatedRows[rowIndex][colIndex].text = editValue;
+        const newState = { ...tableData, rows: updatedRows };
+        setTableData(newState);
+        saveToHistory(newState);
         
-        // If auto-save is enabled, save the HTML immediately
         if (autoSave && onExportHtml) {
           const correctedHtml = generateFinalHtml();
           onExportHtml(correctedHtml);
-          console.log('Auto-saved edited cell');
-          setHasChanges(false);
         }
       }
       
@@ -202,126 +419,61 @@ const TableEditor = React.forwardRef(({
     }
   };
 
-  // Updated function to generate corrected HTML
-  const generateCorrectedHtml = () => {
-    if (!tableData || !tableData.originalTable) {
-      console.error('No table data available');
-      return '';
-    }
-    
-    // Create a deep clone of the original table to preserve structure
-    const clonedTable = tableData.originalTable.cloneNode(true);
-    
-    // Process each row in the cloned table
-    const rows = clonedTable.querySelectorAll('tr');
-    rows.forEach((row, rowIdx) => {
-      // Get all cells in this row (both th and td)
-      const cells = Array.from(row.querySelectorAll('th, td'));
-      cells.forEach((cell, colIdx) => {
-        // Update the cell content if we have edited data for this position
-        if (tableData.rows[rowIdx] && tableData.rows[rowIdx][colIdx]) {
-          cell.innerHTML = tableData.rows[rowIdx][colIdx].text;
-        }
-      });
-    });
-    
-    return clonedTable.outerHTML;
-  };
-
-  // Alternative implementation using a matrix-based approach
-  // This might be more reliable for complex tables
-  const generateCorrectedHtmlMatrix = () => {
-    if (!tableData || !tableData.originalTable) {
-      console.error('No table data available');
-      return '';
-    }
-    
-    // Clone the original table
-    const clonedTable = tableData.originalTable.cloneNode(true);
-    
-    // Create a virtual matrix of the same size as our parsed data
-    // to map positions in the original table
-    const matrix = [];
-    const rows = clonedTable.querySelectorAll('tr');
-    
-    // Initialize the matrix
-    for (let i = 0; i < rows.length; i++) {
-      matrix[i] = [];
-    }
-    
-    // Fill the matrix with references to DOM cells
-    // This accounts for colspan and rowspan
-    let rowIndex = 0;
-    rows.forEach(row => {
-      let colIndex = 0;
-      const cells = row.querySelectorAll('th, td');
-      
-      cells.forEach(cell => {
-        // Find the next available position in the matrix
-        while (matrix[rowIndex][colIndex]) {
-          colIndex++;
-        }
-        
-        // Get spans
-        const colspan = parseInt(cell.getAttribute('colspan')) || 1;
-        const rowspan = parseInt(cell.getAttribute('rowspan')) || 1;
-        
-        // Fill the matrix with references to this cell
-        for (let r = 0; r < rowspan; r++) {
-          for (let c = 0; c < colspan; c++) {
-            if (!matrix[rowIndex + r]) matrix[rowIndex + r] = [];
-            matrix[rowIndex + r][colIndex + c] = { 
-              cell, 
-              mainCell: r === 0 && c === 0,
-              originalRow: rowIndex,
-              originalCol: colIndex
-            };
-          }
-        }
-        
-        colIndex += colspan;
-      });
-      
-      rowIndex++;
-    });
-    
-    // Now update each cell's content from our edited data
-    for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
-      for (let colIdx = 0; colIdx < matrix[rowIdx].length; colIdx++) {
-        const matrixCell = matrix[rowIdx][colIdx];
-        if (matrixCell && matrixCell.mainCell) {
-          // Find the corresponding cell in our edited data
-          if (tableData.rows[rowIdx] && tableData.rows[rowIdx][colIdx]) {
-            matrixCell.cell.innerHTML = tableData.rows[rowIdx][colIdx].text;
-          }
-        }
-      }
-    }
-    
-    return clonedTable.outerHTML;
-  };
-
-  // Use the matrix-based version as it's more reliable
+  // Improved HTML generation
   const generateFinalHtml = () => {
-    return generateCorrectedHtmlMatrix();
-  };
+    if (!tableData || !tableData.rows.length) {
+      console.error('No table data available');
+      return '';
+    }
+    
+    // Create a new table element with border
+    const newTable = document.createElement('table');
+    newTable.setAttribute('border', '1');
+    const tbody = document.createElement('tbody');
+    newTable.appendChild(tbody);
 
-  // Export HTML directly back to the original file
-  const handleExportHtml = () => {
-    if (Object.keys(corrections).length === 0) {
-      console.log('No corrections to export');
-      return;
-    }
+    // First, calculate the total number of columns in the table
+    let totalColumns = 0;
+    tableData.rows.forEach(row => {
+      let rowColumns = 0;
+      row.forEach(cell => {
+        if (cell) {
+          rowColumns += cell.colspan || 1;
+        }
+      });
+      totalColumns = Math.max(totalColumns, rowColumns);
+    });
+
+    // Create rows and cells based on current table data
+    tableData.rows.forEach((row, rowIndex) => {
+      const tr = document.createElement('tr');
+      let currentColumn = 0;
+
+      // Process existing cells
+      row.forEach((cell, colIndex) => {
+        if (cell) {
+          const td = document.createElement(cell.isHeader ? 'th' : 'td');
+          td.innerHTML = cell.text || '';
+          
+          if (cell.rowspan > 1) td.setAttribute('rowspan', cell.rowspan);
+          if (cell.colspan > 1) td.setAttribute('colspan', cell.colspan);
+          
+          tr.appendChild(td);
+          currentColumn += cell.colspan || 1;
+        }
+      });
+
+      // Add any missing cells to complete the row
+      while (currentColumn < totalColumns) {
+        const td = document.createElement('td');
+        tr.appendChild(td);
+        currentColumn++;
+      }
+      
+      tbody.appendChild(tr);
+    });
     
-    // Generate HTML with corrected text
-    const correctedHtml = generateFinalHtml();
-    
-    // Save directly back to the original file
-    if (onExportHtml) {
-      onExportHtml(correctedHtml);
-      // Reset changes flag after saving
-      setHasChanges(false);
-    }
+    return newTable.outerHTML;
   };
 
   // Check if a cell has been corrected
@@ -338,22 +490,111 @@ const TableEditor = React.forwardRef(({
   React.useImperativeHandle(ref, () => ({
     generateCorrectedHtml: () => {
       return generateFinalHtml();
-    }
+    },
+    undo: handleUndo,
+    canUndo: () => currentHistoryIndex > 0
   }));
+
+  // Handle delete row
+  const handleDeleteRow = (index) => {
+    const updatedRows = JSON.parse(JSON.stringify(tableData.rows));
+    updatedRows.splice(index, 1);
+
+    // Update rowIndex for all remaining rows
+    for (let i = index; i < updatedRows.length; i++) {
+      updatedRows[i] = updatedRows[i].map(cell => 
+        cell ? { ...cell, rowIndex: i } : null
+      );
+    }
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    
+    const correctedHtml = generateFinalHtml();
+    if (onExportHtml) {
+      onExportHtml(correctedHtml);
+    }
+  };
+
+  // Handle add row above
+  const handleAddRowAbove = (index) => {
+    const updatedRows = [...tableData.rows];
+    const templateRow = updatedRows[index];
+    
+    // Create new row based on the template row
+    const newRow = templateRow.map((cell, colIndex) => ({
+      text: '',
+      isHeader: false,
+      rowspan: 1,
+      colspan: 1,
+      rowIndex: index,
+      colIndex: colIndex,
+      originalCell: null
+    }));
+
+    // Insert the new row at the specified index
+    updatedRows.splice(index, 0, newRow);
+
+    // Update rowIndex for all rows after the insertion
+    for (let i = index + 1; i < updatedRows.length; i++) {
+      updatedRows[i] = updatedRows[i].map(cell => 
+        cell ? { ...cell, rowIndex: i } : null
+      );
+    }
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    handleSaveChanges();
+  };
+
+  // Handle add column to the left
+  const handleAddColumnLeft = (index) => {
+    const updatedRows = tableData.rows.map((row, rowIndex) => {
+      const newCell = {
+        text: '',
+        isHeader: row[0]?.isHeader || false,
+        rowspan: 1,
+        colspan: 1,
+        rowIndex: rowIndex,
+        colIndex: index,
+        originalCell: null
+      };
+
+      const newRow = [...row];
+      newRow.splice(index, 0, newCell);
+
+      // Update colIndex for all cells after the insertion
+      for (let i = index + 1; i < newRow.length; i++) {
+        if (newRow[i]) {
+          newRow[i] = { ...newRow[i], colIndex: i };
+        }
+      }
+
+      return newRow;
+    });
+
+    const newState = { ...tableData, rows: updatedRows };
+    setTableData(newState);
+    saveToHistory(newState);
+    handleSaveChanges();
+  };
 
   // Render the table editor
   return (
     <Box sx={{ height: '100%', overflow: 'hidden' }}>
       {!hideInstructions && (
         <Typography variant="body2" sx={{ p: 1, color: 'text.secondary' }}>
-          Click on any cell to edit its content.
+          Click to edit cells. Use Ctrl/Cmd+Click to select multiple cells for merging.
+          Right-click for additional options.
         </Typography>
       )}
       
       <TableContainer 
         component={Paper} 
         sx={{ 
-          height: hideInstructions ? '100%' : 'calc(100% - 40px)',
+          height: '100%',
           overflow: 'auto',
           '& table': {
             borderCollapse: 'collapse',
@@ -370,24 +611,29 @@ const TableEditor = React.forwardRef(({
           <TableBody>
             {tableData.rows.map((row, rowIndex) => (
               <TableRow key={rowIndex}>
-                {row.map((cell, cellIndex) => (
-                  <TableCell
-                    key={`${rowIndex}-${cellIndex}`}
-                    onClick={() => handleCellClick(rowIndex, cellIndex)}
-                    rowSpan={cell.rowspan}
-                    colSpan={cell.colspan}
-                    component={cell.isHeader ? 'th' : 'td'}
-                    align="left"
-                    sx={{
-                      cursor: 'pointer',
-                      backgroundColor: cell.isHeader ? '#f5f5f5' : 'inherit',
-                      '&:hover': {
-                        backgroundColor: '#f0f7ff',
-                      },
-                    }}
-                  >
-                    {cell.text}
-                  </TableCell>
+                {row.map((cell, colIndex) => (
+                  cell && (
+                    <TableCell
+                      key={`${rowIndex}-${colIndex}`}
+                      onClick={(e) => handleCellClick(e, rowIndex, colIndex)}
+                      onContextMenu={(e) => handleContextMenu(e, rowIndex, colIndex)}
+                      rowSpan={cell.rowspan}
+                      colSpan={cell.colspan}
+                      component={cell.isHeader ? 'th' : 'td'}
+                      align="left"
+                      sx={{
+                        cursor: 'pointer',
+                        backgroundColor: selectedCells.some(
+                          c => c.rowIndex === rowIndex && c.colIndex === colIndex
+                        ) ? '#e3f2fd' : cell.isHeader ? '#f5f5f5' : 'inherit',
+                        '&:hover': {
+                          backgroundColor: '#f0f7ff',
+                        },
+                      }}
+                    >
+                      {cell.text}
+                    </TableCell>
+                  )
                 ))}
               </TableRow>
             ))}
@@ -395,7 +641,78 @@ const TableEditor = React.forwardRef(({
         </Table>
       </TableContainer>
 
-      <CustomDialog
+      {/* Context Menu */}
+      <Menu
+        open={Boolean(contextMenuPosition)}
+        onClose={handleCloseContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenuPosition
+            ? { top: contextMenuPosition.y, left: contextMenuPosition.x }
+            : undefined
+        }
+      >
+        {anchorEl && (
+          <>
+            <MenuItem onClick={() => {
+              handleDeleteRow(anchorEl.rowIndex);
+              handleCloseContextMenu();
+            }}>
+              Delete Row
+            </MenuItem>
+            <MenuItem onClick={() => {
+              handleDeleteColumn(anchorEl.colIndex);
+              handleCloseContextMenu();
+            }}>
+              Delete Column
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={() => {
+              handleAddRowAbove(anchorEl.rowIndex);
+              handleCloseContextMenu();
+            }}>
+              Insert Row Above
+            </MenuItem>
+            <MenuItem onClick={() => {
+              handleAddRow(anchorEl.rowIndex);
+              handleCloseContextMenu();
+            }}>
+              Insert Row Below
+            </MenuItem>
+            <MenuItem onClick={() => {
+              handleAddColumnLeft(anchorEl.colIndex);
+              handleCloseContextMenu();
+            }}>
+              Insert Column Left
+            </MenuItem>
+            <MenuItem onClick={() => {
+              handleAddColumn(anchorEl.colIndex);
+              handleCloseContextMenu();
+            }}>
+              Insert Column Right
+            </MenuItem>
+            {selectedCells.length > 1 && (
+              <MenuItem onClick={() => {
+                handleMergeCells();
+                handleCloseContextMenu();
+              }}>
+                Merge Selected Cells
+              </MenuItem>
+            )}
+            {tableData.rows[anchorEl.rowIndex][anchorEl.colIndex].rowspan > 1 ||
+             tableData.rows[anchorEl.rowIndex][anchorEl.colIndex].colspan > 1 ? (
+              <MenuItem onClick={() => {
+                handleSplitCell(anchorEl.rowIndex, anchorEl.colIndex);
+                handleCloseContextMenu();
+              }}>
+                Split Cell
+              </MenuItem>
+            ) : null}
+          </>
+        )}
+      </Menu>
+
+      <Dialog
         open={dialogOpen}
         onClose={handleCloseDialog}
         maxWidth="md"
@@ -420,7 +737,7 @@ const TableEditor = React.forwardRef(({
             Save
           </Button>
         </DialogActions>
-      </CustomDialog>
+      </Dialog>
     </Box>
   );
 });

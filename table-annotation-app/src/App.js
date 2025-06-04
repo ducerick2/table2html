@@ -11,6 +11,7 @@ import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
+import UndoIcon from '@mui/icons-material/Undo';
 import {
   getFileDetails,
   getImageUrl,
@@ -172,12 +173,33 @@ function App() {
   };
 
   // Handle table content change
-  const handleTableChange = (newTableHtml) => {
+  const handleTableChange = async (newTableHtml) => {
     const newTables = [...tables];
     newTables[currentTableIndex] = newTableHtml;
+    
+    // Update state first
     setTables(newTables);
+    
+    // Then trigger auto-save if enabled
     if (autoSave) {
-      handleAutoSave();
+      try {
+        const result = await updateParsedText(currentFileId, {
+          outside_text: outsideText,
+          tables: newTables  // Use the new tables array directly
+        });
+        
+        if (!result.success) {
+          if (result.error && result.error.includes('modified externally')) {
+            toast.warning('File was modified externally. Reloading latest version...');
+            await loadFile(currentFileId);
+          } else {
+            toast.error(`Error saving: ${result.error}`);
+          }
+        }
+      } catch (error) {
+        console.error('Error auto-saving:', error);
+        toast.error('Error saving changes');
+      }
     }
   };
 
@@ -578,6 +600,13 @@ function App() {
     }
   };
 
+  // Add handleUndo function
+  const handleUndo = () => {
+    if (tableEditor.current?.canUndo()) {
+      tableEditor.current.undo();
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -612,6 +641,14 @@ function App() {
                       onClick={handleBackToFiles}
                     >
                       Back to Files
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<UndoIcon />}
+                      onClick={handleUndo}
+                      disabled={!tableEditor.current?.canUndo()}
+                    >
+                      Undo
                     </Button>
                     <Button
                       variant="outlined"
