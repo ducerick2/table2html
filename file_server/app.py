@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import mimetypes
 import time
-
+import pdb
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
@@ -22,6 +22,23 @@ PORT = int(os.environ.get('PORT', 5000))
 file_index = None
 index_last_updated = 0
 INDEX_CACHE_DURATION = 120  # seconds
+
+def sanitize_table_html(table_html):
+    """
+    Clean up malformed table HTML by handling multiple opening tags
+    """
+    # Remove bare <table> if followed by <table border="1">
+    cleaned = re.sub(r'<table>\s*<table\s+[^>]*>', r'<table border="1">', table_html)
+    
+    # Count opening and closing tags
+    open_tags = len(re.findall(r'<table[^>]*>', cleaned))
+    close_tags = len(re.findall(r'</table>', cleaned))
+    
+    # Add missing closing tags
+    if open_tags > close_tags:
+        cleaned += '</table>' * (open_tags - close_tags)
+    
+    return cleaned
 
 def parse_tables_from_text(text):
     """
@@ -36,6 +53,9 @@ def parse_tables_from_text(text):
     # Find all tables
     tables = table_pattern.findall(text)
     
+    # Clean up each table
+    cleaned_tables = [sanitize_table_html(table) for table in tables]
+    
     # Replace each table with a marker
     outside_text = text
     for table in tables:
@@ -43,7 +63,7 @@ def parse_tables_from_text(text):
     
     return {
         'outside_text': outside_text,
-        'tables': tables
+        'tables': cleaned_tables
     }
 
 def read_text_file(file_path):

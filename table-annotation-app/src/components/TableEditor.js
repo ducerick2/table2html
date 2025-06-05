@@ -21,10 +21,35 @@ const TableEditor = React.forwardRef(({
   const [history, setHistory] = useState([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1);
 
+  // Helper function to sanitize table HTML
+  const sanitizeTableHtml = (tableHtml) => {
+    // Remove bare <table> if followed by <table border="1">
+    let cleaned = tableHtml.replace(/<table>\s*<table\s+[^>]*>/g, '<table border="1">');
+    
+    // Count opening and closing tags
+    const openTags = (cleaned.match(/<table[^>]*>/g) || []).length;
+    const closeTags = (cleaned.match(/<\/table>/g) || []).length;
+    
+    // Add missing closing tags
+    if (openTags > closeTags) {
+      cleaned += '</table>'.repeat(openTags - closeTags);
+    }
+    
+    return cleaned;
+  };
+
   // Updated parseHtmlTable function to handle colspan and rowspan
   const parseHtmlTable = (tableHtml) => {
+    if (!tableHtml) {
+      console.error('No table HTML provided');
+      return { rows: [], originalTable: null };
+    }
+
+    // Sanitize the table HTML first
+    const cleanedHtml = sanitizeTableHtml(tableHtml);
+    
     const parser = new DOMParser();
-    const doc = parser.parseFromString(tableHtml, 'text/html');
+    const doc = parser.parseFromString(cleanedHtml, 'text/html');
     const tableElement = doc.querySelector('table');
     
     if (!tableElement) {
