@@ -616,24 +616,24 @@ function App() {
               onFileSelected={handleFileSelected} 
               initialPage={lastPageNumber}
             />
-          ) : (
+        ) : (
             <Box sx={{ width: '100%', height: '100%', p: 2 }}>
               {/* File Navigation */}
               <Paper sx={{ mb: 2, p: 1 }}>
-                <Box sx={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
                   alignItems: 'center'
-                }}>
+              }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="h6">
-                      {currentFile.name}
-                    </Typography>
+                    {currentFile.name}
+                  </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
                       (File {currentFile.pagination?.fileIndex} of {currentFile.pagination?.totalFiles}, 
                       Page {currentFile.pagination?.currentPage})
-                    </Typography>
-                  </Box>
+                  </Typography>
+                </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
                       variant="outlined"
@@ -674,16 +674,16 @@ function App() {
                     >
                       Save File
                     </Button>
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      startIcon={<DeleteIcon />}
-                      onClick={handleOpenExcludeDialog}
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={handleOpenExcludeDialog}
                     >
                       Exclude
-                    </Button>
-                  </Box>
-                </Box>
+                          </Button>
+                        </Box>
+                      </Box>
               </Paper>
 
               {/* Main Content */}
@@ -699,7 +699,7 @@ function App() {
 
                 {/* Right side - Text and Table editors */}
                 <Grid item xs={12} md={6}>
-                  <Box sx={{ 
+                      <Box sx={{ 
                     height: '100%', 
                     display: 'flex', 
                     flexDirection: 'column', 
@@ -723,33 +723,33 @@ function App() {
                             onNavigate={handleTableNavigation}
                           />
                           <Box sx={{ flex: 1, overflow: 'auto' }}>
-                            <TableEditor
-                              ref={tableEditor}
+                        <TableEditor
+                          ref={tableEditor}
                               tableHtml={tables[currentTableIndex]}
-                              onAnnotationSaved={handleAnnotationSaved}
-                              existingAnnotations={currentAnnotations}
+                          onAnnotationSaved={handleAnnotationSaved}
+                          existingAnnotations={currentAnnotations}
                               onExportHtml={handleTableChange}
-                              autoSave={autoSave}
-                              onEditingStateChange={setIsEditing}
+                          autoSave={autoSave}
+                          onEditingStateChange={setIsEditing}
                               hideInstructions={true}
-                            />
-                          </Box>
+                        />
+                      </Box>
                         </>
-                      ) : (
+                  ) : (
                         <Box sx={{ p: 2, textAlign: 'center' }}>
                           <Typography color="textSecondary">
                             No tables found in the text
-                          </Typography>
-                        </Box>
-                      )}
-                    </Paper>
+                    </Typography>
+                </Box>
+              )}
+            </Paper>
                   </Box>
                 </Grid>
               </Grid>
-            </Box>
-          )}
-        </Box>
-
+          </Box>
+        )}
+      </Box>
+      
         {/* Loading overlay */}
         {isLoading && (
           <Box
@@ -773,23 +773,23 @@ function App() {
         )}
 
         {/* Exclude confirmation dialog */}
-        <Dialog
-          open={confirmExcludeOpen}
-          onClose={handleCloseExcludeDialog}
-        >
+      <Dialog
+        open={confirmExcludeOpen}
+        onClose={handleCloseExcludeDialog}
+      >
           <DialogTitle>Confirm Exclude</DialogTitle>
-          <DialogContent>
+        <DialogContent>
             <DialogContentText>
               Are you sure you want to exclude this file? This will move the image and its associated files to the excluded directory.
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
             <Button onClick={handleCloseExcludeDialog}>Cancel</Button>
             <Button onClick={handleExcludeFile} color="error" startIcon={<DeleteIcon />}>
               Exclude
-            </Button>
-          </DialogActions>
-        </Dialog>
+          </Button>
+        </DialogActions>
+      </Dialog>
       </Box>
     </ThemeProvider>
   );

@@ -21,7 +21,8 @@ PORT = int(os.environ.get('PORT', 5000))
 # File index cache
 file_index = None
 index_last_updated = 0
-INDEX_CACHE_DURATION = 120  # seconds
+INDEX_CACHE_DURATION = 300  # increased to 5 minutes
+file_stats_cache = {}  # Cache for file stats
 
 def sanitize_table_html(table_html):
     """
@@ -82,9 +83,43 @@ def ensure_excluded_dir():
         os.makedirs(EXCLUDED_DIR, exist_ok=True)
         print(f"Created excluded directory: {EXCLUDED_DIR}")
 
-def get_file_content(file_path):
-    """Read current content directly from disk"""
+def get_cached_file_stats(file_path):
+    """Get file stats with caching to reduce file system calls"""
+    global file_stats_cache
+    
+    current_time = time.time()
+    if file_path in file_stats_cache:
+        stats, timestamp = file_stats_cache[file_path]
+        if current_time - timestamp < INDEX_CACHE_DURATION:
+            return stats
+    
     try:
+        stats = os.stat(file_path)
+        file_stats_cache[file_path] = (stats, current_time)
+        return stats
+    except:
+        return None
+
+def get_file_content(file_path):
+    """Read current content directly from disk with caching"""
+    global file_stats_cache
+    
+    # Check if we have cached stats and if file was modified
+    current_time = time.time()
+    if file_path in file_stats_cache:
+        stats, timestamp = file_stats_cache[file_path]
+        if current_time - timestamp < INDEX_CACHE_DURATION:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    return content
+            except Exception:
+                pass
+    
+    # If cache miss or error, update cache and try again
+    try:
+        stats = os.stat(file_path)
+        file_stats_cache[file_path] = (stats, current_time)
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
     except Exception as e:
@@ -102,7 +137,7 @@ def build_file_index():
     """Build or refresh the file index"""
     global file_index, index_last_updated
     
-    # Only rebuild if it's been more than 30 seconds since last update
+    # Only rebuild if it's been more than cache duration since last update
     now = time.time()
     if file_index is not None and (now - index_last_updated < INDEX_CACHE_DURATION):
         return file_index
@@ -117,11 +152,17 @@ def build_file_index():
     
     image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']
     
-    for filename in os.listdir(IMAGES_DIR):
-        # Only process image files
-        if not any(filename.lower().endswith(ext) for ext in image_extensions):
-            continue
-        
+    # Get all files at once to reduce directory access
+    try:
+        all_files = set(os.listdir(IMAGES_DIR))
+    except Exception as e:
+        print(f"Error listing directory: {str(e)}")
+        return []
+    
+    # Process image files
+    image_files = [f for f in all_files if any(f.lower().endswith(ext) for ext in image_extensions)]
+    
+    for filename in sorted(image_files):
         file_path = os.path.join(IMAGES_DIR, filename)
         if not os.path.isfile(file_path):
             continue
@@ -129,28 +170,24 @@ def build_file_index():
         # Get base name without extension
         base_name = os.path.splitext(filename)[0]
         txt_file = f"{base_name}.txt"
-        txt_path = os.path.join(IMAGES_DIR, txt_file)
-        
         annotation_file = f"{base_name}_annotations.json"
-        annotation_path = os.path.join(IMAGES_DIR, annotation_file)
         
-        # Get file stats
-        stats = os.stat(file_path)
+        # Use cached stats
+        stats = get_cached_file_stats(file_path)
+        if not stats:
+            continue
         
         index.append({
             "id": base_name,
             "name": filename,
             "path": file_path,
-            "txtPath": txt_path if os.path.exists(txt_path) else None,
-            "hasTxt": os.path.exists(txt_path),
-            "annotationPath": annotation_path if os.path.exists(annotation_path) else None,
-            "hasAnnotation": os.path.exists(annotation_path),
+            "txtPath": os.path.join(IMAGES_DIR, txt_file) if txt_file in all_files else None,
+            "hasTxt": txt_file in all_files,
+            "annotationPath": os.path.join(IMAGES_DIR, annotation_file) if annotation_file in all_files else None,
+            "hasAnnotation": annotation_file in all_files,
             "size": stats.st_size,
             "lastModified": stats.st_mtime
         })
-    
-    # Sort by name
-    index.sort(key=lambda x: x["name"])
     
     file_index = index
     index_last_updated = now
