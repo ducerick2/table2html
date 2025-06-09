@@ -444,6 +444,16 @@ function App() {
       // Skip keyboard navigation if loading or editing a cell
       if (!currentFile || isLoading || isEditing) return;
       
+      // Skip if the active element is a text input or textarea
+      const activeElement = document.activeElement;
+      if (activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+      )) {
+        return;
+      }
+      
       switch (event.key) {
         case 'ArrowLeft':
           // Auto-save before navigating
