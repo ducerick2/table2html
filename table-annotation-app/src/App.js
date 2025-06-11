@@ -53,7 +53,7 @@ function App() {
   const [currentAnnotations, setCurrentAnnotations] = useState([]);
   const [serverStatus, setServerStatus] = useState(null);
   const [serverConnected, setServerConnected] = useState(false);
-  const [autoSave, setAutoSave] = useState(true);
+  const [autoSave, setAutoSave] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [mobileView, setMobileView] = useState('both');
   const [confirmExcludeOpen, setConfirmExcludeOpen] = useState(false);
@@ -164,69 +164,16 @@ function App() {
     }
   };
 
-  // Handle text content change
+  // Modify handleTextChange to not trigger auto-save
   const handleTextChange = (newText) => {
     setOutsideText(newText);
-    if (autoSave) {
-      handleAutoSave();
-    }
   };
 
-  // Handle table content change
+  // Modify handleTableChange to not trigger auto-save
   const handleTableChange = async (newTableHtml) => {
     const newTables = [...tables];
     newTables[currentTableIndex] = newTableHtml;
-    
-    // Update state first
     setTables(newTables);
-    
-    // Then trigger auto-save if enabled
-    if (autoSave) {
-      try {
-        const result = await updateParsedText(currentFileId, {
-          outside_text: outsideText,
-          tables: newTables  // Use the new tables array directly
-        });
-        
-        if (!result.success) {
-          if (result.error && result.error.includes('modified externally')) {
-            toast.warning('File was modified externally. Reloading latest version...');
-            await loadFile(currentFileId);
-          } else {
-            toast.error(`Error saving: ${result.error}`);
-          }
-        }
-      } catch (error) {
-        console.error('Error auto-saving:', error);
-        toast.error('Error saving changes');
-      }
-    }
-  };
-
-  // Add auto-save function
-  const handleAutoSave = async () => {
-    try {
-      if (currentFileId) {
-        const result = await updateParsedText(currentFileId, {
-          outside_text: outsideText,
-          tables: tables
-        });
-        
-        if (!result.success) {
-          // Check if the file was modified externally
-          if (result.error && result.error.includes('modified externally')) {
-            toast.warning('File was modified externally. Reloading latest version...');
-            // Reload the current file to get the latest version
-            await loadFile(currentFileId);
-          } else {
-            toast.error(`Error saving: ${result.error}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error auto-saving:', error);
-      toast.error('Error saving changes');
-    }
   };
 
   // Handle file selection from FileBrowser
@@ -234,28 +181,16 @@ function App() {
     loadFile(fileId);
   };
 
-  // Navigate to next file
+  // Update handleNextFile to always save before navigation
   const handleNextFile = async () => {
     if (!currentFile) return;
     
     try {
-      // Ensure we auto-save before navigating
-      if (autoSave && currentFileId && tables.length > 0) {
-        setIsLoading(true);
-        setLoadingStatus('Saving changes...');
-        
-        // Make sure we get the latest tables
-        if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
-          const correctedHtml = tableEditor.current.generateCorrectedHtml();
-          if (correctedHtml) {
-            // Wait for the table update to complete
-            handleTableChange(correctedHtml);
-            console.log('Auto-saved tables before navigation');
-          }
-        }
-      }
-      
+      // Always save before navigating
       setIsLoading(true);
+      setLoadingStatus('Saving changes...');
+      await saveCurrentText();
+      
       setLoadingStatus('Loading next file...');
       
       // Get files to find the next one
@@ -279,28 +214,16 @@ function App() {
     }
   };
 
-  // Navigate to previous file
+  // Update handlePrevFile to always save before navigation
   const handlePrevFile = async () => {
     if (!currentFile) return;
     
     try {
-      // Ensure we auto-save before navigating
-      if (autoSave && currentFileId && tables.length > 0) {
-        setIsLoading(true);
-        setLoadingStatus('Saving changes...');
-        
-        // Make sure we get the latest tables
-        if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
-          const correctedHtml = tableEditor.current.generateCorrectedHtml();
-          if (correctedHtml) {
-            // Wait for the table update to complete
-            handleTableChange(correctedHtml);
-            console.log('Auto-saved tables before navigation');
-          }
-        }
-      }
-      
+      // Always save before navigating
       setIsLoading(true);
+      setLoadingStatus('Saving changes...');
+      await saveCurrentText();
+      
       setLoadingStatus('Loading previous file...');
       
       // Get files to find the previous one
@@ -398,46 +321,67 @@ function App() {
     }
   };
 
-  // Update handleBackToFiles to pass current page
+  // Update handleBackToFiles to always save before navigation
   const handleBackToFiles = async () => {
-    // Auto-save before navigating away
-    if (autoSave && currentFileId) {
-      await handleAutoSave();
+    try {
+      // Always save before navigating away
+      if (currentFileId) {
+        setIsLoading(true);
+        setLoadingStatus('Saving changes...');
+        await saveCurrentText();
+      }
+      
+      setCurrentFile(null);
+      setCurrentFileId(null);
+      setCurrentImage(null);
+      setOutsideText('');
+      setTables([]);
+      setCurrentAnnotations([]);
+    } catch (error) {
+      console.error('Error saving before navigation:', error);
+      toast.error('Error saving changes');
+    } finally {
+      setIsLoading(false);
     }
-    
-    setCurrentFile(null);
-    setCurrentFileId(null);
-    setCurrentImage(null);
-    setOutsideText('');
-    setTables([]);
-    setCurrentAnnotations([]);
   };
 
-  // Add a dedicated auto-save function
+  // Update saveCurrentText to not check autoSave
   const saveCurrentText = async () => {
-    if (!currentFileId || !outsideText || !tables.length) return false;
+    if (!currentFileId) return false;
     
     try {
       // Get the current corrected text
       if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
         const correctedHtml = tableEditor.current.generateCorrectedHtml();
         if (correctedHtml) {
+          // Update the current table in the tables array
+          const updatedTables = [...tables];
+          updatedTables[currentTableIndex] = correctedHtml;
+          
           // Save the text
           const result = await updateParsedText(currentFileId, {
             outside_text: outsideText,
-            tables: tables
+            tables: updatedTables
           });
+
+          if (!result.success && result.error && result.error.includes('modified externally')) {
+            toast.warning('File was modified externally. Reloading latest version...');
+            await loadFile(currentFileId);
+            return false;
+          }
+
           return result.success;
         }
       }
       return false;
     } catch (error) {
       console.error('Error saving text:', error);
+      toast.error('Error saving changes');
       return false;
     }
   };
 
-  // Make sure our keyboard navigation also uses the auto-save function
+  // Update keyboard navigation to always save
   useEffect(() => {
     // Function to handle keyboard events
     const handleKeyDown = async (event) => {
@@ -456,21 +400,17 @@ function App() {
       
       switch (event.key) {
         case 'ArrowLeft':
-          // Auto-save before navigating
-          if (autoSave) {
-            setIsLoading(true);
-            setLoadingStatus('Saving changes...');
-            await saveCurrentText();
-          }
+          // Always save before navigating
+          setIsLoading(true);
+          setLoadingStatus('Saving changes...');
+          await saveCurrentText();
           handlePrevFile();
           break;
         case 'ArrowRight':
-          // Auto-save before navigating
-          if (autoSave) {
-            setIsLoading(true);
-            setLoadingStatus('Saving changes...');
-            await saveCurrentText();
-          }
+          // Always save before navigating
+          setIsLoading(true);
+          setLoadingStatus('Saving changes...');
+          await saveCurrentText();
           handleNextFile();
           break;
         default:
@@ -482,14 +422,15 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentFile, isLoading, isEditing, autoSave]);
+  }, [currentFile, isLoading, isEditing]);
 
-  // Add a beforeunload handler to save changes when closing the browser
+  // Remove beforeunload handler since we're not auto-saving anymore
   useEffect(() => {
-    const handleBeforeUnload = async (e) => {
-      if (autoSave && currentFileId && tables.length > 0) {
-        // Attempt to save changes
-        await saveCurrentText();
+    const handleBeforeUnload = (e) => {
+      if (currentFileId && tables.length > 0) {
+        // Show a warning if there are unsaved changes
+        e.preventDefault();
+        e.returnValue = '';
       }
     };
     
@@ -497,7 +438,7 @@ function App() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [currentFileId, tables.length, autoSave]);
+  }, [currentFileId, tables.length]);
 
   // Handle excluding (removing) the current file
   const handleOpenExcludeDialog = () => {
