@@ -657,7 +657,7 @@ function App() {
                     gap: 2 
                   }}>
                     {/* Text Editor */}
-                    <Paper sx={{ flex: 0.67, overflow: 'hidden' }}>
+                    <Paper sx={{ flex: 1, overflow: 'hidden' }}>
                       <TextEditor 
                         text={outsideText}
                         onTextChange={handleTextChange}
@@ -665,7 +665,7 @@ function App() {
                     </Paper>
 
                     {/* Table Editor */}
-                    <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <Paper sx={{ flex: 0.5, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                       {tables.length > 0 ? (
                         <>
                           <TableNavigator

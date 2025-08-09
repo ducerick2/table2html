@@ -25,7 +25,7 @@ const TextEditor = ({ text, onTextChange }) => {
                     '& .MuiInputBase-input': {
                         height: '100% !important',
                         overflowY: 'auto !important',
-                        fontSize: '14px',
+                        fontSize: '16px',
                         lineHeight: 1.5,
                     }
                 }}
