@@ -425,6 +425,7 @@ def export_txt(file_id):
         
         # Get text content from request
         txt_content = request.json.get("text")
+        txt_content = re.sub(r'[ \t]+', ' ', "\n".join(line.strip() for line in txt_content.splitlines()))
         if not txt_content:
             return jsonify({"error": "No text content provided"}), 400
         
@@ -515,6 +516,7 @@ def update_txt(file_id):
         
         # Get text content from request
         txt_content = request.json.get("text")
+        txt_content = re.sub(r'[ \t]+', ' ', "\n".join(line.strip() for line in txt_content.splitlines()))
         if not txt_content:
             return jsonify({"error": "No text content provided"}), 400
         
@@ -657,22 +659,24 @@ def update_parsed_txt(file_id):
             base_name = file_id
             txt_path = os.path.join(IMAGES_DIR, f"{base_name}.txt")
         
-        # Count the number of table markers in the text
-        marker_count = outside_text.count('<TABLE></TABLE>')
+        # # Count the number of table markers in the text
+        # marker_count = outside_text.count('<TABLE></TABLE>')
         
-        # Verify we have the right number of tables
-        if marker_count != len(tables):
-            return jsonify({
-                "success": False,
-                "error": f"Mismatch between number of table markers ({marker_count}) and tables provided ({len(tables)})"
-            }), 400
+        # # Verify we have the right number of tables
+        # if marker_count != len(tables):
+        #     return jsonify({
+        #         "success": False,
+        #         "error": f"Mismatch between number of table markers ({marker_count}) and tables provided ({len(tables)})"
+        #     }), 400
         
-        # Reconstruct the full text by inserting tables back in their positions
+        # # Reconstruct the full text by inserting tables back in their positions
         full_text = outside_text
-        for table in tables:
-            # Replace only the first occurrence of the marker
-            # This ensures tables are inserted in the correct order
-            full_text = full_text.replace('<TABLE></TABLE>', table, 1)
+        # for table in tables:
+        #     # Replace only the first occurrence of the marker
+        #     # This ensures tables are inserted in the correct order
+        #     full_text = full_text.replace('<TABLE></TABLE>', table, 1)
+
+        full_text = re.sub(r'[ \t]+', ' ', "\n".join(line.strip() for line in full_text.splitlines()))
         
         # Save text to the file
         with open(txt_path, 'w', encoding='utf-8') as txt_file:
