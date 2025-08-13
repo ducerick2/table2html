@@ -425,7 +425,7 @@ def export_txt(file_id):
         
         # Get text content from request
         txt_content = request.json.get("text")
-        txt_content = re.sub(r'[ \t]+', ' ', "\n".join(line.strip() for line in txt_content.splitlines()))
+        txt_content = "\n".join(re.sub(r'\s+', ' ', line.strip()) for line in txt_content.splitlines() if line.strip())
         if not txt_content:
             return jsonify({"error": "No text content provided"}), 400
         
@@ -516,7 +516,7 @@ def update_txt(file_id):
         
         # Get text content from request
         txt_content = request.json.get("text")
-        txt_content = re.sub(r'[ \t]+', ' ', "\n".join(line.strip() for line in txt_content.splitlines()))
+        txt_content = "\n".join(re.sub(r'\s+', ' ', line.strip()) for line in txt_content.splitlines() if line.strip())
         if not txt_content:
             return jsonify({"error": "No text content provided"}), 400
         
@@ -676,7 +676,7 @@ def update_parsed_txt(file_id):
         #     # This ensures tables are inserted in the correct order
         #     full_text = full_text.replace('<TABLE></TABLE>', table, 1)
 
-        full_text = re.sub(r'[ \t]+', ' ', "\n".join(line.strip() for line in full_text.splitlines()))
+        full_text = "\n".join(re.sub(r'\s+', ' ', line.strip()) for line in full_text.splitlines() if line.strip())
         
         # Save text to the file
         with open(txt_path, 'w', encoding='utf-8') as txt_file:
