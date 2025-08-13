@@ -188,7 +188,7 @@ function App() {
     try {
       // Always save before navigating
       setIsLoading(true);
-      setLoadingStatus('Saving changes...');
+      // setLoadingStatus('Saving changes...');
       await saveCurrentText();
       
       setLoadingStatus('Loading next file...');
@@ -221,7 +221,7 @@ function App() {
     try {
       // Always save before navigating
       setIsLoading(true);
-      setLoadingStatus('Saving changes...');
+      // setLoadingStatus('Saving changes...');
       await saveCurrentText();
       
       setLoadingStatus('Loading previous file...');
@@ -347,37 +347,39 @@ function App() {
 
   // Update saveCurrentText to not check autoSave
   const saveCurrentText = async () => {
-    if (!currentFileId) return false;
-    
     try {
-      // Get the current corrected text
+      if (!currentFileId) return;
+
+      // Make sure we get the latest table content
+      let finalTables = [...tables];
       if (tableEditor.current && tableEditor.current.generateCorrectedHtml) {
         const correctedHtml = tableEditor.current.generateCorrectedHtml();
         if (correctedHtml) {
-          // Update the current table in the tables array
-          const updatedTables = [...tables];
-          updatedTables[currentTableIndex] = correctedHtml;
-          
-          // Save the text
-          const result = await updateParsedText(currentFileId, {
-            outside_text: outsideText,
-            tables: updatedTables
-          });
-
-          if (!result.success && result.error && result.error.includes('modified externally')) {
-            toast.warning('File was modified externally. Reloading latest version...');
-            await loadFile(currentFileId);
-            return false;
-          }
-
-          return result.success;
+          finalTables[currentTableIndex] = correctedHtml;
         }
       }
-      return false;
+
+      // Send the current text and all tables to be saved
+      const result = await updateParsedText(currentFileId, {
+        outside_text: outsideText,
+        tables: finalTables
+      });
+
+      if (!result.success) {
+        if (result.error && result.error.includes('modified externally')) {
+          toast.warning('File was modified externally. Reloading latest version...');
+          // await loadFile(currentFileId);
+        } else {
+          toast.error(`Error saving: ${result.error}`);
+        }
+      } else {
+        toast.success('File saved successfully');
+      }
     } catch (error) {
-      console.error('Error saving text:', error);
-      toast.error('Error saving changes');
-      return false;
+      console.error('Error saving file:', error);
+      toast.error('Error saving file');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -402,14 +404,14 @@ function App() {
         case 'ArrowLeft':
           // Always save before navigating
           setIsLoading(true);
-          setLoadingStatus('Saving changes...');
+          // setLoadingStatus('Saving changes...');
           await saveCurrentText();
           handlePrevFile();
           break;
         case 'ArrowRight':
           // Always save before navigating
           setIsLoading(true);
-          setLoadingStatus('Saving changes...');
+          // setLoadingStatus('Saving changes...');
           await saveCurrentText();
           handleNextFile();
           break;

@@ -327,7 +327,7 @@ def get_txt(file_id):
     """Get text content"""
     try:
         index = build_file_index()
-        
+
         # Find file in index
         file_info = next((file for file in index if file["id"] == file_id), None)
         if not file_info or not file_info["hasTxt"]:
